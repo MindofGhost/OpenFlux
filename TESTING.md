@@ -17,6 +17,13 @@ go test -race ./...
 Tests use local TCP/TLS servers and a simulated broadcast document, including
 multiple clients, concurrent connections, binary payloads, half-close, reordered
 and duplicated frames, message/ACK loss, reconnects and unavailable targets.
+Pool tests simulate independent broadcast documents and verify round-robin
+distribution, clients using subsets, replies through the correct document,
+rejection of another document's frames for an existing stream, isolation of
+document failures, recovery for new streams, and the shared connection limit
+on both client and server. CLI tests cover repeated URLs, duplicate suppression
+and rejection of pools in unsupported modes. These tests do not measure live
+throughput across multiple Yandex documents.
 Yandex tests also cover batched cursor events, ping/pong, co-editing authentication
 acknowledgement and session shutdown.
 
