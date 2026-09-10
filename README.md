@@ -162,6 +162,11 @@ Engine.IO, Socket.IO and document authentication before reporting connected.
 
 Implement the `Transport` interface from `transport/transport.go`, add your package, register in main.go switch.
 
+## Testing
+
+See [TESTING.md](TESTING.md) for local checks, live document tests, the
+12-connection speed test and recorded measurements on the `main-test` branch.
+
 ## License
 
 Educational use only. Test on your own machines and networks.
