@@ -65,10 +65,10 @@ func main() {
 
 	switch *transportType {
 	case "yandex":
-		trans = yandex.NewYandexDocsTransport(globalDocUrl, config)
+		trans = transport.NewCompressedTransport(yandex.NewYandexDocsTransport(globalDocUrl, config))
 	case "oneme":
 		uidint, _ := strconv.ParseInt(maxUid, 10, 64)
-		trans = oneme.NewOneMeTransport(*exitNode || *server, maxToken, uidint, config)
+		trans = transport.NewCompressedTransport(oneme.NewOneMeTransport(*exitNode || *server, maxToken, uidint, config))
 	default:
 		log.Fatalf("Unknown transport type: %s", *transportType)
 	}

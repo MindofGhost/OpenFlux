@@ -1,14 +1,27 @@
-# OpenFlux - Universal Bypass Tool
+# OpenFlux
+
+**English** | [Русский](README.ru.md)
 
 Network stack research tool. TCP tunnel with pluggable transports.
 
+## Overview
 ```
 Client (SOCKS5) --> Transport --> Exit Node --> Internet
 ```
 
-## What it does
+## Requirements
+1. Golang v. 1.26.3+ - is required for building desktop client / exit node binary (universal-bypass-tool);
+2. Android Native Development Kit (NDK) v.27.0.12077973+ - is required for building Android client binary;
+3. XCode v. 26.6+ - is required for building iOS client binary;
+4. Linux VPS / VDS exit node.
 
-Sends TCP packets through Yandex Docs cursor messages (or webRTC datachannel if MAX transport selected). Client side runs a SOCKS5 proxy, exit node decapsulates and forwards to real internet.
+## Overview
+
+TCP packets are sent via Transport. Currently, there are two transports available:
+1. Yandex - sends packets via Yandex Docs cursor messages;
+2. Max - sends packets via WebRTC DataChannel.
+
+Client side runs a SOCKS5 proxy, exit node decapsulates and forwards packets to destination point.
 
 The optional `--mode tcp` forwards TCP **byte streams** to a fixed server-side
 destination. It can carry an existing AnyTLS or VLESS TCP+TLS connection without
@@ -32,43 +45,45 @@ universal-bypass-tool/
 └── utils/                # Debug logging
 ```
 
-## Build
+## Build (desktop client / exit-node binary)
 
 ```bash
 go mod tidy
 go build -o universal-bypass-tool .
 ```
 
-## Build for Android
+## Build for Android (client binary)
 ```bash
-export ANDROID_NDK_HOME=<YOUR ANDROID NDK PATH>
+export ANDROID_NDK_HOME=<your Android NDK path>
 ./build_android.sh
 ```
 
-## Build for iOS
+## Build for iOS (client binary)
 ```bash
-XCODE_PATH="/Applications/Xcode.app"  # or Xcode-beta path
-SDK_PATH="$XCODE_PATH/Contents/Developer/Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS.sdk"
+export XCODE_PATH="<your Xcode.app path>" # optional, defaults to /Applications/Xcode.app
 ./build_ios.sh
 ```
 
 ## Usage
 
-Exit node (needs root):
+### 1. Setting up exit node
+1. You must have root access on exit node machine;
+2. Only legacy Yandex document editor is supported (you can toggle this setting from the interface).
 
-Please use the old document editor. At the moment, the application crashes if you use the new one. I will fix this problem as soon as possible.
-
+Setup commands for exit node:
 ```bash
 sudo iptables -A OUTPUT -p tcp --tcp-flags RST RST -j DROP
 sudo ./universal-bypass-tool --exit-node --url "YOUR_YANDEX_DOC_URL" --debug
 ```
 
-Client:
+### 1. Setting up desktop client:
+
+Setup commands for desktop client:
 ```bash
 ./universal-bypass-tool --client --url "YOUR_YANDEX_DOC_URL" --socks5 :1080 --debug
 ```
 
-Then point your browser to SOCKS5 proxy at localhost:1080.
+Then set up SOCKS5 proxy in your browser at localhost:1080.
 
 ## TCP forwarding through one document
 
@@ -136,6 +151,9 @@ multi-client setup is for Yandex Docs.
 - All streams share the backend's bandwidth and outer TCP connection. This
   mode does not provide UDP-like latency or independent loss recovery per stream.
 
+Both ends should run the updated build: the transport now wraps messages with
+LZ4 compression (or a marker for uncompressed messages).
+
 The backend still targets the old Yandex editor described above. It waits for
 Engine.IO, Socket.IO and document authentication before reporting connected.
 
@@ -147,7 +165,7 @@ Engine.IO, Socket.IO and document authentication before reporting connected.
 | `--exit-node` | | Run as exit node |
 | `--socks5` | `:1080` | SOCKS5 listen addr |
 | `--url` | `https://localhost` | Document URL (Yandex Docs) |
-| `--maxToken` | `` | Token (Max) |
+| `--maxToken` | `` | Auth token (Max) |
 | `--maxUid` | `` | User ID (Max) |
 | `--debug` | `false` | Verbose logging |
 | `--transport` | `yandex` | Transport backend |
@@ -158,9 +176,9 @@ Engine.IO, Socket.IO and document authentication before reporting connected.
 | `--tcp-timeout` | `30s` | TCP bridge opening, write, peer and acknowledgement timeout |
 | `--tcp-max-connections` | `1024` | Maximum simultaneous streams per TCP bridge process |
 
-## Adding new transports
+## Implementing custom transports
 
-Implement the `Transport` interface from `transport/transport.go`, add your package, register in main.go switch.
+You are free to implement the `Transport` interface from `transport/transport.go` and register your custom transport in main.go switch block.
 
 ## Testing
 
@@ -168,5 +186,12 @@ See [TESTING.md](TESTING.md) for local checks, live document tests, the
 12-connection speed test and recorded measurements on the `main-test` branch.
 
 ## License
+
+This project is licensed under the **GNU General Public License v3.0 or later**.
+See [LICENSE](LICENSE) for the full text.
+
+Third-party licenses are listed in [NOTICE](NOTICE).
+
+## Disclaimer
 
 Educational use only. Test on your own machines and networks.
