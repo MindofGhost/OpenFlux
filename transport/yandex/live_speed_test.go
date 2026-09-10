@@ -42,13 +42,31 @@ type speedPhaseResult struct {
 	Streams   []speedStreamResult `json:"streams"`
 }
 
-// Opt-in throughput test: two bridge clients, configurable TCP streams, one
-// shared document. Timings exclude document login and TCP establishment, include
+// Opt-in throughput test: two bridge clients, configurable TCP streams and
+// a pool of shared documents. Timings exclude document login and TCP establishment, include
 // queue draining and receiver digest confirmation, and count application bytes.
 func TestLiveYandexTCPSpeed(t *testing.T) {
-	url := os.Getenv("OPENFLUX_YANDEX_TEST_URL")
-	if url == "" || os.Getenv("OPENFLUX_YANDEX_SPEED_TEST") != "1" {
-		t.Skip("set OPENFLUX_YANDEX_TEST_URL and OPENFLUX_YANDEX_SPEED_TEST=1")
+	urls := []string{os.Getenv("OPENFLUX_YANDEX_TEST_URL")}
+	if os.Getenv("OPENFLUX_YANDEX_SPEED_TEST") != "1" {
+		t.Skip("set OPENFLUX_YANDEX_SPEED_TEST=1 and document URL(s)")
+	}
+	if v := os.Getenv("OPENFLUX_YANDEX_TEST_URLS"); v != "" {
+		if err := json.Unmarshal([]byte(v), &urls); err != nil {
+			t.Fatal("OPENFLUX_YANDEX_TEST_URLS must be a JSON array of document URLs")
+		}
+	}
+	if len(urls) == 1 && urls[0] == "" {
+		t.Skip("set OPENFLUX_YANDEX_TEST_URL or OPENFLUX_YANDEX_TEST_URLS")
+	}
+	if len(urls) == 0 {
+		t.Fatal("document pool is empty")
+	}
+	seen := make(map[string]bool)
+	for _, url := range urls {
+		if url == "" || seen[url] {
+			t.Fatal("document URLs must be nonempty and distinct")
+		}
+		seen[url] = true
 	}
 	utils.EnableDebug()
 	connections := 12
@@ -89,33 +107,41 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 		}
 	}()
 	var backendTransports []*yandex.YandexDocsTransport
-	connect := func(target string) (*tcpbridge.Bridge, *yandex.YandexDocsTransport) {
-		config := transport.DefaultConfig()
-		config.MaxReconnectAttempts = 2
-		tr := yandex.NewYandexDocsTransport(url, config)
-		// Match the CLI: both Yandex and MAX now use the LZ4 wrapper.
-		bridge, err := tcpbridge.New(transport.NewCompressedTransport(tr), tcpbridge.Config{Target: target, Timeout: 30 * time.Second})
+	connect := func(target string) *tcpbridge.Bridge {
+		var peers []transport.Transport
+		var raw []*yandex.YandexDocsTransport
+		for _, url := range urls {
+			config := transport.DefaultConfig()
+			config.MaxReconnectAttempts = 2
+			tr := yandex.NewYandexDocsTransport(url, config)
+			raw = append(raw, tr)
+			backendTransports = append(backendTransports, tr)
+			peers = append(peers, transport.NewCompressedTransport(tr))
+			t.Cleanup(func() { tr.Stop() })
+		}
+		bridge, err := tcpbridge.NewPool(peers, tcpbridge.Config{Target: target, Timeout: 30 * time.Second})
 		if err != nil {
 			t.Fatal(err)
 		}
-		backendTransports = append(backendTransports, tr)
-		t.Cleanup(func() { bridge.Close(); tr.Stop() })
-		if err := tr.Start(); err != nil {
-			t.Fatal(err)
-		}
-		deadline := time.Now().Add(60 * time.Second)
-		for !tr.IsConnected() {
-			if time.Now().After(deadline) {
-				t.Fatal("document did not authenticate")
+		t.Cleanup(func() { bridge.Close() })
+		for doc, tr := range raw {
+			if err := tr.Start(); err != nil {
+				t.Fatal(err)
 			}
-			time.Sleep(50 * time.Millisecond)
+			deadline := time.Now().Add(60 * time.Second)
+			for !tr.IsConnected() {
+				if time.Now().After(deadline) {
+					t.Fatalf("document %d did not authenticate", doc+1)
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
 		}
-		return bridge, tr
+		return bridge
 	}
 	connect(target.Addr().String())
 	var conns []net.Conn
 	for device := 0; device < 2; device++ {
-		bridge, _ := connect("")
+		bridge := connect("")
 		l, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
@@ -139,7 +165,12 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 			conns = append(conns, c)
 		}
 	}
-	t.Logf("Ready: %d TCP streams, 2 clients, 1 server; %s send window per direction", len(conns), duration)
+	for _, tr := range backendTransports {
+		if !tr.IsConnected() {
+			t.Fatal("a document disconnected during setup")
+		}
+	}
+	t.Logf("Ready: %d TCP streams, 2 clients, 1 server, %d documents, %d backend sessions; %s send window per direction", len(conns), len(urls), len(backendTransports), duration)
 	var phases []speedPhaseResult
 	for _, direction := range []string{"upload", "download"} {
 		phase := speedPhaseResult{Direction: direction, Streams: make([]speedStreamResult, len(conns))}
@@ -210,12 +241,13 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 		UTC               string                     `json:"utc"`
 		Connections       int                        `json:"connections"`
 		Clients           int                        `json:"clients"`
+		Documents         int                        `json:"documents"`
 		Compression       string                     `json:"compression"`
 		SocketWriteBuffer int                        `json:"socket_write_buffer"`
 		SendSeconds       float64                    `json:"send_seconds"`
 		Phases            []speedPhaseResult         `json:"phases"`
 		BackendStats      []transport.TransportStats `json:"backend_stats"`
-	}{UTC: time.Now().UTC().Format(time.RFC3339), Connections: len(conns), Clients: 2, Compression: "lz4", SocketWriteBuffer: speedSocketWriteBuffer, SendSeconds: duration.Seconds(), Phases: phases}
+	}{UTC: time.Now().UTC().Format(time.RFC3339), Connections: len(conns), Clients: 2, Documents: len(urls), Compression: "lz4", SocketWriteBuffer: speedSocketWriteBuffer, SendSeconds: duration.Seconds(), Phases: phases}
 	for _, tr := range backendTransports {
 		report.BackendStats = append(report.BackendStats, tr.Stats())
 	}

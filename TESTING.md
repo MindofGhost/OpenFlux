@@ -52,6 +52,24 @@ the same LZ4 transport wrapper as the CLI. The test's sending TCP sockets reques
 a 64 KiB write buffer to reduce queued data after the sending interval; production
 bridge socket settings are unchanged. Run throughput tests without `-race`.
 
+To measure 12 streams over two documents, supply their URLs as a JSON array:
+
+```bash
+OPENFLUX_YANDEX_TEST_URLS='["DOCUMENT_A_URL","DOCUMENT_B_URL"]' \
+  OPENFLUX_YANDEX_SPEED_TEST=1 \
+  OPENFLUX_YANDEX_SPEED_CONNECTIONS=12 \
+  OPENFLUX_YANDEX_SPEED_REPORT=/tmp/openflux-speed-two-docs.json \
+  go test -v -count=1 ./transport/yandex -run '^TestLiveYandexTCPSpeed$' -timeout 420s
+```
+
+`OPENFLUX_YANDEX_TEST_URLS` overrides the single-document variable. Both clients
+and the server use the entire pool through `tcpbridge.NewPool`. With two
+documents and 12 streams, each client opens three streams per document, giving
+six streams per document and six WebSocket sessions in total. All configured
+sessions authenticate before that bridge starts opening streams. Backend
+counters in the report are ordered by server, client 1, client 2, and then by
+document within each group. The report records the document count, not URLs.
+
 The default send interval is 20 seconds per direction, configurable using
 `OPENFLUX_YANDEX_SPEED_DURATION` (1s–1m). Each stream is capped at 32 MiB per
 direction. Reported throughput counts application payload only, excludes
@@ -59,6 +77,30 @@ document login/TCP setup, and includes draining queued data and receiver SHA-256
 verification. Both bridge ends run locally, but all measured payload traverses
 the real Yandex document; this is not a measurement between two physical devices
 on different access networks. Tests are skipped unless explicitly enabled.
+
+## 12 connections across two documents
+
+Measured on 2026-09-10 with two distinct shared documents, one server and two
+clients. Every bridge subscribed to both documents, creating six WebSocket
+sessions. Each client opened six TCP streams through the pool, alternating
+between documents: three per document per client, six per document in total.
+Settings matched the LZ4 benchmark above (20s send interval, 64 KiB requested
+test socket write buffers, 1024-byte frames, 16-frame window per stream).
+
+| Direction | Verified payload | Elapsed including drain | Aggregate throughput |
+|---|---:|---:|---:|
+| Clients → server | 22.0625 MiB | 23.083 s | 8.018 Mbit/s |
+| Server → clients | 32.3125 MiB | 25.035 s | 10.827 Mbit/s |
+
+All 12 streams passed byte-count and SHA-256 verification in both directions.
+All six backend sessions remained connected with zero reconnects. This is one
+run through the actual Yandex backend with both bridge ends on the same machine;
+no simultaneous single-document control run was performed. Earlier results
+below were measured at another time and do not establish a controlled speedup.
+
+The [JSON report](test-results/yandex-tcp-lz4-12-streams-2-documents-2026-09-10.json)
+contains per-stream timings, hashes and counters for all six sessions, without
+document URLs or credentials.
 
 ## 12 versus 24 connections with LZ4
 
