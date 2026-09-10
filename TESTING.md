@@ -41,33 +41,40 @@ twelve streams each), separately in each direction:
 ```bash
 OPENFLUX_YANDEX_TEST_URL="YOUR_YANDEX_DOC_URL" \
   OPENFLUX_YANDEX_SPEED_TEST=1 \
+  OPENFLUX_YANDEX_SPEED_CLIENTS=2 \
   OPENFLUX_YANDEX_SPEED_CONNECTIONS=24 \
   OPENFLUX_YANDEX_SPEED_REPORT=/tmp/openflux-speed.json \
   go test -v ./transport/yandex -run '^TestLiveYandexTCPSpeed$' -timeout 300s
 ```
 
-`OPENFLUX_YANDEX_SPEED_CONNECTIONS` defaults to 12 and accepts even numbers
-from 2 to 64, divided equally between two bridge clients. The benchmark uses
+`OPENFLUX_YANDEX_SPEED_CONNECTIONS` defaults to 12 and accepts integers
+from 1 to 64. `OPENFLUX_YANDEX_SPEED_CLIENTS` defaults to **1**; set it to 2
+to reproduce the earlier two-client topology. Streams are divided equally
+between clients, so the connection count must be divisible by the client count.
+There is always one bridge server. The benchmark uses
 the same LZ4 transport wrapper as the CLI. The test's sending TCP sockets request
 a 64 KiB write buffer to reduce queued data after the sending interval; production
 bridge socket settings are unchanged. Run throughput tests without `-race`.
 
-To measure 12 streams over two documents, supply their URLs as a JSON array:
+To measure 12 streams over two documents with one client and one server,
+supply their URLs as a JSON array:
 
 ```bash
 OPENFLUX_YANDEX_TEST_URLS='["DOCUMENT_A_URL","DOCUMENT_B_URL"]' \
   OPENFLUX_YANDEX_SPEED_TEST=1 \
+  OPENFLUX_YANDEX_SPEED_CLIENTS=1 \
   OPENFLUX_YANDEX_SPEED_CONNECTIONS=12 \
   OPENFLUX_YANDEX_SPEED_REPORT=/tmp/openflux-speed-two-docs.json \
   go test -v -count=1 ./transport/yandex -run '^TestLiveYandexTCPSpeed$' -timeout 420s
 ```
 
-`OPENFLUX_YANDEX_TEST_URLS` overrides the single-document variable. Both clients
-and the server use the entire pool through `tcpbridge.NewPool`. With two
-documents and 12 streams, each client opens three streams per document, giving
-six streams per document and six WebSocket sessions in total. All configured
+`OPENFLUX_YANDEX_TEST_URLS` overrides the single-document variable. Each client
+and the server use the entire pool through `tcpbridge.NewPool`. With one client,
+two documents and 12 streams, the client opens six streams per document, giving
+four WebSocket sessions in total: two from the client and two from the server.
+Generally, session count is `(clients + 1) × documents`. All configured
 sessions authenticate before that bridge starts opening streams. Backend
-counters in the report are ordered by server, client 1, client 2, and then by
+counters in the report are ordered by server, then clients, and then by
 document within each group. The report records the document count, not URLs.
 
 The default send interval is 20 seconds per direction, configurable using
@@ -78,7 +85,7 @@ verification. Both bridge ends run locally, but all measured payload traverses
 the real Yandex document; this is not a measurement between two physical devices
 on different access networks. Tests are skipped unless explicitly enabled.
 
-## 12 connections across two documents
+## Historical two-client run: 12 connections across two documents
 
 Measured on 2026-09-10 with two distinct shared documents, one server and two
 clients. Every bridge subscribed to both documents, creating six WebSocket

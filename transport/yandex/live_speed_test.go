@@ -42,7 +42,7 @@ type speedPhaseResult struct {
 	Streams   []speedStreamResult `json:"streams"`
 }
 
-// Opt-in throughput test: two bridge clients, configurable TCP streams and
+// Opt-in throughput test: configurable bridge clients, TCP streams and
 // a pool of shared documents. Timings exclude document login and TCP establishment, include
 // queue draining and receiver digest confirmation, and count application bytes.
 func TestLiveYandexTCPSpeed(t *testing.T) {
@@ -73,9 +73,20 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 	if v := os.Getenv("OPENFLUX_YANDEX_SPEED_CONNECTIONS"); v != "" {
 		var err error
 		connections, err = strconv.Atoi(v)
-		if err != nil || connections < 2 || connections > 64 || connections%2 != 0 {
-			t.Fatal("speed connections must be an even number between 2 and 64")
+		if err != nil || connections < 1 || connections > 64 {
+			t.Fatal("speed connections must be between 1 and 64")
 		}
+	}
+	clients := 1
+	if v := os.Getenv("OPENFLUX_YANDEX_SPEED_CLIENTS"); v != "" {
+		var err error
+		clients, err = strconv.Atoi(v)
+		if err != nil || clients < 1 || clients > connections {
+			t.Fatal("speed clients must be between 1 and the number of TCP connections")
+		}
+	}
+	if connections%clients != 0 {
+		t.Fatal("TCP connection count must be divisible by the client count")
 	}
 	duration := 20 * time.Second
 	if v := os.Getenv("OPENFLUX_YANDEX_SPEED_DURATION"); v != "" {
@@ -140,7 +151,7 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 	}
 	connect(target.Addr().String())
 	var conns []net.Conn
-	for device := 0; device < 2; device++ {
+	for device := 0; device < clients; device++ {
 		bridge := connect("")
 		l, err := net.Listen("tcp", "127.0.0.1:0")
 		if err != nil {
@@ -148,7 +159,7 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 		}
 		t.Cleanup(func() { l.Close() })
 		go func() { _ = bridge.Serve(l) }()
-		for stream := 0; stream < connections/2; stream++ {
+		for stream := 0; stream < connections/clients; stream++ {
 			c, err := net.DialTimeout("tcp", l.Addr().String(), 5*time.Second)
 			if err != nil {
 				t.Fatal(err)
@@ -170,7 +181,7 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 			t.Fatal("a document disconnected during setup")
 		}
 	}
-	t.Logf("Ready: %d TCP streams, 2 clients, 1 server, %d documents, %d backend sessions; %s send window per direction", len(conns), len(urls), len(backendTransports), duration)
+	t.Logf("Ready: %d TCP streams, %d clients, 1 server, %d documents, %d backend sessions; %s send window per direction", len(conns), clients, len(urls), len(backendTransports), duration)
 	var phases []speedPhaseResult
 	for _, direction := range []string{"upload", "download"} {
 		phase := speedPhaseResult{Direction: direction, Streams: make([]speedStreamResult, len(conns))}
@@ -247,7 +258,7 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 		SendSeconds       float64                    `json:"send_seconds"`
 		Phases            []speedPhaseResult         `json:"phases"`
 		BackendStats      []transport.TransportStats `json:"backend_stats"`
-	}{UTC: time.Now().UTC().Format(time.RFC3339), Connections: len(conns), Clients: 2, Documents: len(urls), Compression: "lz4", SocketWriteBuffer: speedSocketWriteBuffer, SendSeconds: duration.Seconds(), Phases: phases}
+	}{UTC: time.Now().UTC().Format(time.RFC3339), Connections: len(conns), Clients: clients, Documents: len(urls), Compression: "lz4", SocketWriteBuffer: speedSocketWriteBuffer, SendSeconds: duration.Seconds(), Phases: phases}
 	for _, tr := range backendTransports {
 		report.BackendStats = append(report.BackendStats, tr.Stats())
 	}
