@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -23,6 +24,7 @@ import (
 
 const speedBlockSize = 64 << 10
 const speedMaxBytes = 32 << 20 // Per stream, per direction.
+const speedSocketWriteBuffer = 64 << 10
 
 type speedStreamResult struct {
 	Stream  int     `json:"stream"`
@@ -40,7 +42,7 @@ type speedPhaseResult struct {
 	Streams   []speedStreamResult `json:"streams"`
 }
 
-// Opt-in throughput test: two bridge clients, six TCP streams per client, one
+// Opt-in throughput test: two bridge clients, configurable TCP streams, one
 // shared document. Timings exclude document login and TCP establishment, include
 // queue draining and receiver digest confirmation, and count application bytes.
 func TestLiveYandexTCPSpeed(t *testing.T) {
@@ -49,6 +51,14 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 		t.Skip("set OPENFLUX_YANDEX_TEST_URL and OPENFLUX_YANDEX_SPEED_TEST=1")
 	}
 	utils.EnableDebug()
+	connections := 12
+	if v := os.Getenv("OPENFLUX_YANDEX_SPEED_CONNECTIONS"); v != "" {
+		var err error
+		connections, err = strconv.Atoi(v)
+		if err != nil || connections < 2 || connections > 64 || connections%2 != 0 {
+			t.Fatal("speed connections must be an even number between 2 and 64")
+		}
+	}
 	duration := 20 * time.Second
 	if v := os.Getenv("OPENFLUX_YANDEX_SPEED_DURATION"); v != "" {
 		var err error
@@ -83,7 +93,8 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 		config := transport.DefaultConfig()
 		config.MaxReconnectAttempts = 2
 		tr := yandex.NewYandexDocsTransport(url, config)
-		bridge, err := tcpbridge.New(tr, tcpbridge.Config{Target: target, Timeout: 30 * time.Second})
+		// Match the CLI: both Yandex and MAX now use the LZ4 wrapper.
+		bridge, err := tcpbridge.New(transport.NewCompressedTransport(tr), tcpbridge.Config{Target: target, Timeout: 30 * time.Second})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -111,12 +122,15 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 		}
 		t.Cleanup(func() { l.Close() })
 		go func() { _ = bridge.Serve(l) }()
-		for stream := 0; stream < 6; stream++ {
+		for stream := 0; stream < connections/2; stream++ {
 			c, err := net.DialTimeout("tcp", l.Addr().String(), 5*time.Second)
 			if err != nil {
 				t.Fatal(err)
 			}
 			t.Cleanup(func() { c.Close() })
+			if err := c.(*net.TCPConn).SetWriteBuffer(speedSocketWriteBuffer); err != nil {
+				t.Fatal(err)
+			}
 			c.SetDeadline(time.Now().Add(35 * time.Second))
 			var ready [1]byte
 			if _, err := io.ReadFull(c, ready[:]); err != nil || ready[0] != 'R' {
@@ -193,13 +207,15 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 		}
 	}
 	report := struct {
-		UTC          string                     `json:"utc"`
-		Connections  int                        `json:"connections"`
-		Clients      int                        `json:"clients"`
-		SendSeconds  float64                    `json:"send_seconds"`
-		Phases       []speedPhaseResult         `json:"phases"`
-		BackendStats []transport.TransportStats `json:"backend_stats"`
-	}{UTC: time.Now().UTC().Format(time.RFC3339), Connections: len(conns), Clients: 2, SendSeconds: duration.Seconds(), Phases: phases}
+		UTC               string                     `json:"utc"`
+		Connections       int                        `json:"connections"`
+		Clients           int                        `json:"clients"`
+		Compression       string                     `json:"compression"`
+		SocketWriteBuffer int                        `json:"socket_write_buffer"`
+		SendSeconds       float64                    `json:"send_seconds"`
+		Phases            []speedPhaseResult         `json:"phases"`
+		BackendStats      []transport.TransportStats `json:"backend_stats"`
+	}{UTC: time.Now().UTC().Format(time.RFC3339), Connections: len(conns), Clients: 2, Compression: "lz4", SocketWriteBuffer: speedSocketWriteBuffer, SendSeconds: duration.Seconds(), Phases: phases}
 	for _, tr := range backendTransports {
 		report.BackendStats = append(report.BackendStats, tr.Stats())
 	}
@@ -296,6 +312,9 @@ func speedCheckFooter(c net.Conn, total uint64, digest []byte) error {
 	return nil
 }
 func speedTarget(c net.Conn, duration time.Duration, uploaded *atomic.Uint64) {
+	if err := c.(*net.TCPConn).SetWriteBuffer(speedSocketWriteBuffer); err != nil {
+		return
+	}
 	if err := speedWrite(c, []byte{'R'}); err != nil {
 		return
 	}

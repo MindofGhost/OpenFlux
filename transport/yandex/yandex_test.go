@@ -88,6 +88,12 @@ func TestSessionPingPayloadAndDisconnect(t *testing.T) {
 		time.Sleep(time.Millisecond)
 	}
 	generation := tr.ConnectionGeneration()
+	// Joining a second editor must release our auth lock without saving edits.
+	remote.WriteMessage(websocket.TextMessage, []byte(`42["message",{"type":"connectState","waitAuth":true}]`))
+	_, unlock, err := remote.ReadMessage()
+	if err != nil || string(unlock) != `42["message",{"type":"unLockDocument","isSave":false,"unlock":true,"releaseLocks":false}]` {
+		t.Fatalf("co-editing acknowledgement: %s, %v", unlock, err)
+	}
 	payload := bytes.Repeat([]byte{0, 1, 2, 255}, 200)
 	if err := tr.Send(payload); err != nil {
 		t.Fatal(err)

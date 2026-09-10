@@ -17,7 +17,8 @@ go test -race ./...
 Tests use local TCP/TLS servers and a simulated broadcast document, including
 multiple clients, concurrent connections, binary payloads, half-close, reordered
 and duplicated frames, message/ACK loss, reconnects and unavailable targets.
-Yandex tests also cover batched cursor events, ping/pong and session shutdown.
+Yandex tests also cover batched cursor events, ping/pong, co-editing authentication
+acknowledgement and session shutdown.
 
 To repeat the live TLS test against your own document (it sends synthetic cursor
 messages, and is skipped unless the environment variable is set):
@@ -27,15 +28,22 @@ OPENFLUX_YANDEX_TEST_URL="YOUR_YANDEX_DOC_URL" \
   go test -v ./transport/yandex -run '^TestLiveYandexTCPBridge$' -timeout 240s
 ```
 
-To measure raw TCP throughput over 12 simultaneous connections (two clients,
-six streams each), separately in each direction:
+To measure raw TCP throughput over 24 simultaneous connections (two clients,
+twelve streams each), separately in each direction:
 
 ```bash
 OPENFLUX_YANDEX_TEST_URL="YOUR_YANDEX_DOC_URL" \
   OPENFLUX_YANDEX_SPEED_TEST=1 \
+  OPENFLUX_YANDEX_SPEED_CONNECTIONS=24 \
   OPENFLUX_YANDEX_SPEED_REPORT=/tmp/openflux-speed.json \
   go test -v ./transport/yandex -run '^TestLiveYandexTCPSpeed$' -timeout 300s
 ```
+
+`OPENFLUX_YANDEX_SPEED_CONNECTIONS` defaults to 12 and accepts even numbers
+from 2 to 64, divided equally between two bridge clients. The benchmark uses
+the same LZ4 transport wrapper as the CLI. The test's sending TCP sockets request
+a 64 KiB write buffer to reduce queued data after the sending interval; production
+bridge socket settings are unchanged. Run throughput tests without `-race`.
 
 The default send interval is 20 seconds per direction, configurable using
 `OPENFLUX_YANDEX_SPEED_DURATION` (1s–1m). Each stream is capped at 32 MiB per
@@ -45,7 +53,53 @@ verification. Both bridge ends run locally, but all measured payload traverses
 the real Yandex document; this is not a measurement between two physical devices
 on different access networks. Tests are skipped unless explicitly enabled.
 
-## Recorded 12-connection measurement
+## 12 versus 24 connections with LZ4
+
+Measured on 2026-09-10 using the same document, two bridge clients and one
+server, in the order 12 → 24 → 24 → 12. Each run sent for 20 seconds per
+direction, followed by draining queued data and checking byte counts and SHA-256.
+The bridge used its default 1024-byte chunks and 16-frame per-stream window.
+Payloads were random 64 KiB blocks repeated within each stream; the LZ4 wrapper
+was enabled, as in the CLI. These are TCP streams multiplexed over two client
+document sessions, not 12 or 24 separate document sessions.
+
+| TCP connections | Run | Clients → server, Mbit/s | Server → clients, Mbit/s |
+|---|---:|---:|---:|
+| 12 | 1 | 7.170 | 7.174 |
+| 24 | 1 | 9.821 | 8.783 |
+| 24 | 2 | 7.975 | 7.784 |
+| 12 | 2 | 5.810 | 7.536 |
+
+Combining the two runs by dividing total verified payload bits by total elapsed
+phase time gives 6.492 → 8.825 Mbit/s upload (**+35.9%**) and
+7.345 → 8.269 Mbit/s download (**+12.6%**). Increasing to 24 streams improved
+aggregate throughput in these runs, with substantial run-to-run variation.
+Two runs per setting do not establish a stable backend limit or guarantee the
+same improvement on another network. More simultaneous streams also increase
+the total outstanding data window; these results do not mean a single TCP
+connection becomes faster or that doubling streams doubles throughput.
+
+All streams passed byte-count and SHA-256 checks in both directions. Some
+document-page, WebSocket or authentication attempts timed out during setup and
+succeeded on retry; no sessions reconnected during the timed transfers.
+An initial attempt before the co-editing fix failed authentication/session
+stability and was excluded. The fix acknowledges `connectState.waitAuth` to
+release our editor's authentication lock without saving document edits. Its
+implementation is on `main-transport`; its regression test is on `main-test`.
+
+The four reports contain per-stream results and backend counters, with no
+document URL or credentials:
+
+- [12 streams, run 1](test-results/yandex-tcp-lz4-12-streams-2026-09-10-run1.json)
+- [24 streams, run 1](test-results/yandex-tcp-lz4-24-streams-2026-09-10-run1.json)
+- [24 streams, run 2](test-results/yandex-tcp-lz4-24-streams-2026-09-10-run2.json)
+- [12 streams, run 2](test-results/yandex-tcp-lz4-12-streams-2026-09-10-run2.json)
+
+## Historical 12-connection measurement (before LZ4)
+
+This earlier run used the bare Yandex transport and default TCP send buffers.
+It is not a controlled comparison with the current benchmark, which enables
+the CLI's LZ4 wrapper and requests smaller test socket write buffers.
 
 Measured on 2026-09-10 Moscow time (2026-09-09 22:44:46 UTC), through a real
 shared `.docx` document with one server and two clients, six streams per client.
