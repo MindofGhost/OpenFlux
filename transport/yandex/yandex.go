@@ -287,9 +287,10 @@ func (t *YandexDocsTransport) authenticate(session *DocSession) error {
 }
 
 type docEvent struct {
-	Type   string `json:"type"`
-	Code   int    `json:"code"`
-	Result int    `json:"result"`
+	Type     string `json:"type"`
+	Code     int    `json:"code"`
+	Result   int    `json:"result"`
+	WaitAuth bool   `json:"waitAuth"`
 }
 
 func eventMetadata(data []byte) docEvent {
@@ -332,6 +333,15 @@ func (t *YandexDocsTransport) handleMessage(session *DocSession, data []byte) {
 	}
 	if session != nil && session.Conn != nil {
 		switch metadata.Type {
+		case "connectState":
+			if metadata.WaitAuth {
+				// The first editor must acknowledge switching to co-editing.
+				// Otherwise ONLYOFFICE times out its auth lock and drops it.
+				// We have no document edits to save or content locks to release.
+				if err := session.safeWrite(websocket.TextMessage, []byte(`42["message",{"type":"unLockDocument","isSave":false,"unlock":true,"releaseLocks":false}]`)); err != nil {
+					session.Conn.Close()
+				}
+			}
 		case "error", "drop", "disconnectReason":
 			session.Conn.Close()
 			return
