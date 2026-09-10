@@ -39,6 +39,7 @@ func main() {
 	targetAddr := flag.String("target", "", "TCP bridge server destination, e.g. 127.0.0.1:443")
 	bridgeTimeout := flag.Duration("tcp-timeout", 30*time.Second, "TCP bridge open, write, peer and acknowledgement timeout")
 	maxConnections := flag.Int("tcp-max-connections", 1024, "Maximum simultaneous TCP bridge connections")
+	windowSize := flag.Int("tcp-window", tcpbridge.DefaultWindowSize, "TCP window in 1024-byte frames (1-256); use the same value at both ends")
 	debug := flag.Bool("debug", false, "Enable verbose debug logging")
 	socksAddr := flag.String("socks5", ":1080", "SOCKS5 address")
 	transportType := flag.String("transport", "yandex", "Transport type (yandex, oneme)")
@@ -55,6 +56,9 @@ func main() {
 	if err := validateDocumentPool(*transportType, *mode, docURLs); err != nil {
 		log.Fatal(err)
 	}
+	if *mode == "tcp" && (*windowSize < 1 || *windowSize > tcpbridge.MaxWindowSize) {
+		log.Fatalf("--tcp-window must be between 1 and %d", tcpbridge.MaxWindowSize)
+	}
 
 	if *debug {
 		utils.EnableDebug()
@@ -70,7 +74,7 @@ func main() {
 	switch *transportType {
 	case "yandex":
 		for _, docURL := range docURLs {
-			transports = append(transports, transport.NewCompressedTransport(yandex.NewYandexDocsTransport(docURL, config)))
+			transports = append(transports, transport.NewUncompressedTransport(yandex.NewYandexDocsTransport(docURL, config)))
 		}
 	case "oneme":
 		uidint, _ := strconv.ParseInt(maxUid, 10, 64)
@@ -82,6 +86,7 @@ func main() {
 	if *mode == "tcp" {
 		if err := runTCPBridge(transports, *listenAddr, tcpbridge.Config{
 			Target: *targetAddr, Timeout: *bridgeTimeout, MaxConnections: *maxConnections,
+			WindowSize: *windowSize,
 		}); err != nil {
 			log.Fatal(err)
 		}
