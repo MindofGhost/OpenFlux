@@ -53,8 +53,8 @@ to reproduce the earlier two-client topology. Streams are divided equally
 between clients, so the connection count must be divisible by the client count.
 There is always one bridge server. Like the CLI, the current benchmark skips
 LZ4 compression on send and retains the uncompressed wire marker. Its default
-window is 64 frames (64 KiB) per stream/direction. Set
-`OPENFLUX_YANDEX_SPEED_WINDOW=16` to compare with the previous window, or choose
+window is 16 frames (16 KiB) per stream/direction. Use
+`OPENFLUX_YANDEX_SPEED_WINDOW=16` explicitly, or choose
 any integer from 1 to 256. The setting applies to both clients and the server.
 Reports include `compression: "none"` and `window_frames` so that new results
 can be distinguished from earlier LZ4/16-frame runs.
@@ -70,7 +70,7 @@ OPENFLUX_YANDEX_TEST_URLS='["DOCUMENT_A_URL","DOCUMENT_B_URL"]' \
   OPENFLUX_YANDEX_SPEED_TEST=1 \
   OPENFLUX_YANDEX_SPEED_CLIENTS=1 \
   OPENFLUX_YANDEX_SPEED_CONNECTIONS=12 \
-  OPENFLUX_YANDEX_SPEED_WINDOW=64 \
+  OPENFLUX_YANDEX_SPEED_WINDOW=16 \
   OPENFLUX_YANDEX_SPEED_REPORT=/tmp/openflux-speed-two-docs.json \
   go test -v -count=1 ./transport/yandex -run '^TestLiveYandexTCPSpeed$' -timeout 420s
 ```
@@ -162,8 +162,7 @@ document URL or credentials:
 
 This earlier run used the bare Yandex transport and default TCP send buffers.
 It is not a controlled comparison with the current benchmark, which retains
-the wire marker, requests smaller test socket write buffers and defaults to a
-64-frame window instead of 16.
+the wire marker and requests smaller test socket write buffers.
 
 Measured on 2026-09-10 Moscow time (2026-09-09 22:44:46 UTC), through a real
 shared `.docx` document with one server and two clients, six streams per client.

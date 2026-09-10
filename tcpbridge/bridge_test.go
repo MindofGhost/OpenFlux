@@ -267,7 +267,7 @@ func TestLostDataClosesInsteadOfCorruptingStream(t *testing.T) {
 }
 
 func TestMissingAckBoundsOutstandingData(t *testing.T) {
-	for _, windowSize := range []int{16, DefaultWindowSize, 128} {
+	for _, windowSize := range []int{DefaultWindowSize, 64, 128} {
 		t.Run(fmt.Sprint(windowSize), func(t *testing.T) {
 			target := targetServer(t, func(c net.Conn) { io.Copy(io.Discard, c) })
 			var dataFrames int
