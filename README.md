@@ -127,6 +127,39 @@ The shared bridge uses the `Transport` interface and can also be selected with
 MAX's existing call topology into a multi-client server. The documented
 multi-client setup is for Yandex Docs.
 
+### A pool of documents
+
+Repeat `--url` to open one Yandex session per document. The server subscribes
+to the whole pool; each client may use any subset, in any order:
+
+```bash
+# Server: accept streams from both documents and forward to one TCP service.
+./openflux --mode tcp --server --transport yandex \
+  --url "DOCUMENT_A_URL" --url "DOCUMENT_B_URL" --target 127.0.0.1:443
+
+# Client: distribute new local TCP connections across both documents.
+./openflux --mode tcp --client --transport yandex \
+  --url "DOCUMENT_A_URL" --url "DOCUMENT_B_URL" --listen 127.0.0.1:15000
+
+# Another client can use just document B.
+./openflux --mode tcp --client --transport yandex \
+  --url "DOCUMENT_B_URL" --listen 127.0.0.1:15000
+```
+
+New TCP streams use authenticated document sessions in round-robin order,
+skipping disconnected sessions. Each stream stays on its chosen document;
+responses return through that document. A document failure closes its streams,
+while streams on other documents continue. Reconnected sessions become eligible
+for new streams. Established streams are not moved between documents, and a
+single TCP stream does not combine their bandwidth. Session availability does
+not guarantee that the bridge server is present; opening still has a timeout.
+
+Configure only documents served by the same bridge server, with one server
+subscription per document. Repeating the exact same URL has no effect; avoid
+using different links to the same document. The pool is supported in Yandex TCP
+mode; legacy SOCKS5/IP mode accepts a single document. Clients subscribed only
+to document A do not receive cursor traffic from document B.
+
 ### Stream behavior and limits
 
 - Opening, data, half-close, reset, acknowledgements and heartbeat messages are
@@ -139,16 +172,16 @@ multi-client setup is for Yandex Docs.
   acknowledgements or peer heartbeats close the affected stream after the
   timeout, rather than delivering bytes after a gap. Queue overflow and socket
   errors also close the stream.
-- Yandex transport disconnects invalidate active streams, including brief
+- Yandex transport disconnects invalidate that document's active streams, including brief
   disconnect/reconnect cycles. Old outbound queues are discarded. Applications
   must open new TCP connections after the backend reconnects; existing TLS
   sessions are not resumed by the bridge.
 - `--tcp-timeout` defaults to `30s` (minimum `1s`) for opening, socket writes,
   peer liveness and acknowledgements; target dialing uses half that duration.
   `--tcp-max-connections` defaults to `1024` per bridge process, including
-  connections still opening. Clients accepted while the backend is disconnected
+  connections still opening, across the entire document pool. Clients accepted while all backends are disconnected
   are closed; an absent/full bridge server results in an opening timeout.
-- All streams share the backend's bandwidth and outer TCP connection. This
+- Streams on the same document share its backend bandwidth and outer TCP connection. This
   mode does not provide UDP-like latency or independent loss recovery per stream.
 
 Both ends should run the updated build: the transport now wraps messages with
@@ -164,7 +197,7 @@ Engine.IO, Socket.IO and document authentication before reporting connected.
 | `--client` | | Run as client |
 | `--exit-node` | | Run as exit node |
 | `--socks5` | `:1080` | SOCKS5 listen addr |
-| `--url` | `https://localhost` | Document URL (Yandex Docs) |
+| `--url` | | Required Yandex document URL; repeat for a pool in TCP mode |
 | `--maxToken` | `` | Auth token (Max) |
 | `--maxUid` | `` | User ID (Max) |
 | `--debug` | `false` | Verbose logging |
