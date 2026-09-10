@@ -53,7 +53,8 @@ type BaseTransport struct {
 	receiveCallback func([]byte)
 	Mu              sync.RWMutex
 
-	reconnectAttempts atomic.Int32
+	reconnectAttempts    atomic.Int32
+	connectionGeneration atomic.Uint64
 }
 
 func NewBaseTransport(config TransportConfig) *BaseTransport {
@@ -71,7 +72,7 @@ func (b *BaseTransport) Start() error {
 
 func (b *BaseTransport) Stop() error {
 	b.running.Store(0)
-	b.connected.Store(0)
+	b.SetConnected(false)
 	return nil
 }
 
@@ -84,11 +85,19 @@ func (b *BaseTransport) IsConnected() bool {
 }
 
 func (b *BaseTransport) SetConnected(connected bool) {
+	var state int32
 	if connected {
-		b.connected.Store(1)
-	} else {
-		b.connected.Store(0)
+		state = 1
 	}
+	if b.connected.Swap(state) != state {
+		b.connectionGeneration.Add(1)
+	}
+}
+
+// ConnectionGeneration changes even if a disconnect/reconnect is too brief
+// for consumers polling IsConnected to observe it.
+func (b *BaseTransport) ConnectionGeneration() uint64 {
+	return b.connectionGeneration.Load()
 }
 
 func (b *BaseTransport) Receive(callback func([]byte)) {
