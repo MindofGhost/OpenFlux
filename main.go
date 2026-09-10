@@ -23,9 +23,8 @@ import (
 )
 
 var (
-	globalDocUrl string
-	maxToken     string
-	maxUid       string
+	maxToken string
+	maxUid   string
 )
 
 func main() {
@@ -43,12 +42,17 @@ func main() {
 	debug := flag.Bool("debug", false, "Enable verbose debug logging")
 	socksAddr := flag.String("socks5", ":1080", "SOCKS5 address")
 	transportType := flag.String("transport", "yandex", "Transport type (yandex, oneme)")
-	flag.StringVar(&globalDocUrl, "url", "http://#", "Document URL. If u use Yandex.Docs transport")
+	var docURLs documentURLs
+	flag.Var(&docURLs, "url", "Yandex document URL; repeat for a document pool in TCP mode")
 	flag.StringVar(&maxToken, "maxToken", "", "MAX call user id. If u use MAX transport")
 	flag.StringVar(&maxUid, "maxUid", "", "MAX Web token. If u use MAX transport")
 	flag.Parse()
 
 	if err := validateMode(*mode, *client, *server, *exitNode, *targetAddr); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := validateDocumentPool(*transportType, *mode, docURLs); err != nil {
 		log.Fatal(err)
 	}
 
@@ -61,20 +65,22 @@ func main() {
 	log.Printf("Transport: %s", *transportType)
 
 	config := transport.DefaultConfig()
-	var trans transport.Transport
+	var transports []transport.Transport
 
 	switch *transportType {
 	case "yandex":
-		trans = transport.NewCompressedTransport(yandex.NewYandexDocsTransport(globalDocUrl, config))
+		for _, docURL := range docURLs {
+			transports = append(transports, transport.NewCompressedTransport(yandex.NewYandexDocsTransport(docURL, config)))
+		}
 	case "oneme":
 		uidint, _ := strconv.ParseInt(maxUid, 10, 64)
-		trans = transport.NewCompressedTransport(oneme.NewOneMeTransport(*exitNode || *server, maxToken, uidint, config))
+		transports = append(transports, transport.NewCompressedTransport(oneme.NewOneMeTransport(*exitNode || *server, maxToken, uidint, config)))
 	default:
 		log.Fatalf("Unknown transport type: %s", *transportType)
 	}
 
 	if *mode == "tcp" {
-		if err := runTCPBridge(trans, *listenAddr, tcpbridge.Config{
+		if err := runTCPBridge(transports, *listenAddr, tcpbridge.Config{
 			Target: *targetAddr, Timeout: *bridgeTimeout, MaxConnections: *maxConnections,
 		}); err != nil {
 			log.Fatal(err)
@@ -82,6 +88,7 @@ func main() {
 		return
 	}
 
+	trans := transports[0]
 	if err := trans.Start(); err != nil {
 		log.Fatalf("Failed to start transport: %v", err)
 	}
@@ -121,8 +128,8 @@ func validateMode(mode string, client, server, exitNode bool, target string) err
 	return nil
 }
 
-func runTCPBridge(trans transport.Transport, listen string, config tcpbridge.Config) error {
-	bridge, err := tcpbridge.New(trans, config)
+func runTCPBridge(transports []transport.Transport, listen string, config tcpbridge.Config) error {
+	bridge, err := tcpbridge.NewPool(transports, config)
 	if err != nil {
 		return err
 	}
@@ -135,11 +142,14 @@ func runTCPBridge(trans transport.Transport, listen string, config tcpbridge.Con
 		}
 		defer listener.Close()
 	}
-	if err := trans.Start(); err != nil {
-		_ = trans.Stop()
-		return err
+	for i, trans := range transports {
+		if err := trans.Start(); err != nil {
+			_ = trans.Stop()
+			return fmt.Errorf("start transport %d: %w", i+1, err)
+		}
+		defer trans.Stop()
 	}
-	defer trans.Stop()
+	log.Printf("TCP bridge document/transport sessions: %d", len(transports))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if listener == nil {

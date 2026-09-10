@@ -24,18 +24,35 @@ type Config struct {
 }
 
 type Bridge struct {
-	trans  transport.Transport
-	config Config
-	ctx    context.Context
-	cancel context.CancelFunc
-	mu     sync.Mutex
-	conns  map[connectionID]*stream
-	closed map[connectionID]time.Time
-	wg     sync.WaitGroup
-	stop   sync.Once
+	transports    []transport.Transport
+	nextTransport int
+	config        Config
+	ctx           context.Context
+	cancel        context.CancelFunc
+	mu            sync.Mutex
+	conns         map[connectionID]*stream
+	closed        map[connectionID]time.Time
+	wg            sync.WaitGroup
+	stop          sync.Once
 }
 
 func New(trans transport.Transport, config Config) (*Bridge, error) {
+	return NewPool([]transport.Transport{trans}, config)
+}
+
+// NewPool pins each TCP stream to one transport. New client streams use
+// connected transports in round-robin order; server replies use the transport
+// that delivered OPEN. The connection limit applies to the entire pool.
+// The caller owns transport lifetimes and must provide distinct instances.
+func NewPool(transports []transport.Transport, config Config) (*Bridge, error) {
+	if len(transports) == 0 {
+		return nil, errors.New("transport pool is empty")
+	}
+	for _, tr := range transports {
+		if tr == nil {
+			return nil, errors.New("nil transport in pool")
+		}
+	}
 	if config.Target != "" {
 		if _, _, err := net.SplitHostPort(config.Target); err != nil {
 			return nil, fmt.Errorf("target: %w", err)
@@ -51,9 +68,11 @@ func New(trans transport.Transport, config Config) (*Bridge, error) {
 		return nil, errors.New("timeout must be at least 1s and max connections must be positive")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	b := &Bridge{trans: trans, config: config, ctx: ctx, cancel: cancel,
+	b := &Bridge{transports: append([]transport.Transport(nil), transports...), config: config, ctx: ctx, cancel: cancel,
 		conns: make(map[connectionID]*stream), closed: make(map[connectionID]time.Time)}
-	trans.Receive(b.receive)
+	for i, tr := range b.transports {
+		tr.Receive(func(data []byte) { b.receive(i, data) })
+	}
 	b.wg.Add(1)
 	go b.monitor()
 	return b, nil
@@ -89,13 +108,27 @@ func (b *Bridge) Serve(listener net.Listener) error {
 			conn.Close()
 			return fmt.Errorf("connection ID: %w", err)
 		}
-		if !b.trans.IsConnected() || !b.add(id, conn) {
+		lane := b.pickTransport()
+		if lane < 0 || !b.add(id, conn, lane) {
 			conn.Close()
 		}
 	}
 }
 
-func (b *Bridge) add(id connectionID, conn net.Conn) bool {
+func (b *Bridge) pickTransport() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for offset := 0; offset < len(b.transports); offset++ {
+		i := (b.nextTransport + offset) % len(b.transports)
+		if b.transports[i].IsConnected() {
+			b.nextTransport = (i + 1) % len(b.transports)
+			return i
+		}
+	}
+	return -1
+}
+
+func (b *Bridge) add(id connectionID, conn net.Conn, lane int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.ctx.Err() != nil || len(b.conns) >= b.config.MaxConnections || b.conns[id] != nil {
@@ -106,7 +139,7 @@ func (b *Bridge) add(id connectionID, conn net.Conn) bool {
 	}
 	ctx, cancel := context.WithCancel(b.ctx)
 	s := &stream{bridge: b, id: id, ctx: ctx, cancel: cancel, conn: conn,
-		in: make(chan frame, 4*windowSize), generation: b.generation()}
+		in: make(chan frame, 4*windowSize), lane: lane, generation: transportGeneration(b.transports[lane])}
 	b.conns[id] = s
 	b.wg.Add(1)
 	go func() {
@@ -116,7 +149,7 @@ func (b *Bridge) add(id connectionID, conn net.Conn) bool {
 	return true
 }
 
-func (b *Bridge) receive(data []byte) {
+func (b *Bridge) receive(lane int, data []byte) {
 	f, err := parseFrame(data)
 	if err != nil || f.server == b.isServer() || b.ctx.Err() != nil {
 		return
@@ -126,9 +159,13 @@ func (b *Bridge) receive(data []byte) {
 	b.mu.Unlock()
 	if s == nil {
 		// Unknown DATA/FIN/ACK never open sockets. Only clients initiate OPEN.
-		if b.isServer() && f.kind == openFrame && b.trans.IsConnected() {
-			b.add(f.id, nil)
+		if b.isServer() && f.kind == openFrame && b.transports[lane].IsConnected() {
+			b.add(f.id, nil, lane)
 		}
+		return
+	}
+	// An ID received on another document must not inject into this stream.
+	if s.lane != lane {
 		return
 	}
 	select {
@@ -161,8 +198,8 @@ func (b *Bridge) remove(s *stream) {
 
 // Backends can expose a generation counter to detect a disconnect/reconnect
 // that occurs between monitor ticks. Other backends still get stream heartbeats.
-func (b *Bridge) generation() uint64 {
-	if t, ok := b.trans.(interface{ ConnectionGeneration() uint64 }); ok {
+func transportGeneration(trans transport.Transport) uint64 {
+	if t, ok := trans.(interface{ ConnectionGeneration() uint64 }); ok {
 		return t.ConnectionGeneration()
 	}
 	return 0
@@ -178,9 +215,8 @@ func (b *Bridge) monitor() {
 			return
 		case now := <-ticker.C:
 			b.mu.Lock()
-			generation := b.generation()
 			for _, s := range b.conns {
-				if !b.trans.IsConnected() || generation != s.generation {
+				if !b.transports[s.lane].IsConnected() || transportGeneration(b.transports[s.lane]) != s.generation {
 					s.cancel()
 				}
 			}
@@ -199,7 +235,9 @@ func (b *Bridge) Close() error {
 		b.mu.Lock()
 		b.cancel()
 		b.mu.Unlock()
-		b.trans.Receive(nil)
+		for _, tr := range b.transports {
+			tr.Receive(nil)
+		}
 		b.wg.Wait()
 	})
 	return nil
@@ -207,6 +245,7 @@ func (b *Bridge) Close() error {
 
 type stream struct {
 	bridge     *Bridge
+	lane       int
 	id         connectionID
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -216,10 +255,11 @@ type stream struct {
 }
 
 func (s *stream) send(kind byte, seq uint64, data []byte) error {
-	if !s.bridge.trans.IsConnected() || s.generation != s.bridge.generation() {
+	trans := s.bridge.transports[s.lane]
+	if !trans.IsConnected() || s.generation != transportGeneration(trans) {
 		return errors.New("transport session lost")
 	}
-	return s.bridge.trans.Send((frame{server: s.bridge.isServer(), kind: kind, id: s.id, seq: seq, data: data}).marshal())
+	return trans.Send((frame{server: s.bridge.isServer(), kind: kind, id: s.id, seq: seq, data: data}).marshal())
 }
 
 type readResult struct {
