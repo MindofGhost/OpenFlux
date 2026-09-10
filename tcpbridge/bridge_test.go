@@ -267,29 +267,41 @@ func TestLostDataClosesInsteadOfCorruptingStream(t *testing.T) {
 }
 
 func TestMissingAckBoundsOutstandingData(t *testing.T) {
-	target := targetServer(t, func(c net.Conn) { io.Copy(io.Discard, c) })
-	var dataFrames int
-	hub := &testHub{hook: func(f frame, b []byte) [][]byte {
-		if !f.server && f.kind == dataFrame {
-			dataFrames++
-		}
-		if f.server && f.kind == ackFrame {
-			return nil
-		}
-		return [][]byte{b}
-	}}
-	newBridge(t, hub.peer(), target)
-	c := dialClient(t, listenClient(t, newBridge(t, hub.peer(), "")))
-	_ = writeAll(c, bytes.Repeat([]byte{42}, chunkSize*windowSize*4))
-	_, err := io.ReadAll(c)
-	if e, ok := err.(net.Error); ok && e.Timeout() {
-		t.Fatal("missing ACK did not close stream")
-	}
-	hub.mu.Lock()
-	n := dataFrames
-	hub.mu.Unlock()
-	if n != windowSize {
-		t.Fatalf("sent %d unacknowledged frames, want %d", n, windowSize)
+	for _, windowSize := range []int{16, DefaultWindowSize, 128} {
+		t.Run(fmt.Sprint(windowSize), func(t *testing.T) {
+			target := targetServer(t, func(c net.Conn) { io.Copy(io.Discard, c) })
+			var dataFrames int
+			hub := &testHub{hook: func(f frame, b []byte) [][]byte {
+				if !f.server && f.kind == dataFrame {
+					dataFrames++
+				}
+				if f.server && f.kind == ackFrame {
+					return nil
+				}
+				return [][]byte{b}
+			}}
+			newWindowBridge := func(target string) *Bridge {
+				b, err := New(hub.peer(), Config{Target: target, Timeout: time.Second, WindowSize: windowSize})
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { b.Close() })
+				return b
+			}
+			newWindowBridge(target)
+			c := dialClient(t, listenClient(t, newWindowBridge("")))
+			_ = writeAll(c, bytes.Repeat([]byte{42}, chunkSize*windowSize*4))
+			_, err := io.ReadAll(c)
+			if e, ok := err.(net.Error); ok && e.Timeout() {
+				t.Fatal("missing ACK did not close stream")
+			}
+			hub.mu.Lock()
+			n := dataFrames
+			hub.mu.Unlock()
+			if n != windowSize {
+				t.Fatalf("sent %d unacknowledged frames, want %d", n, windowSize)
+			}
+		})
 	}
 }
 

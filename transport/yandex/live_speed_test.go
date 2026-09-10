@@ -88,6 +88,14 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 	if connections%clients != 0 {
 		t.Fatal("TCP connection count must be divisible by the client count")
 	}
+	windowSize := tcpbridge.DefaultWindowSize
+	if v := os.Getenv("OPENFLUX_YANDEX_SPEED_WINDOW"); v != "" {
+		var err error
+		windowSize, err = strconv.Atoi(v)
+		if err != nil || windowSize < 1 || windowSize > tcpbridge.MaxWindowSize {
+			t.Fatalf("speed window must be between 1 and %d frames", tcpbridge.MaxWindowSize)
+		}
+	}
 	duration := 20 * time.Second
 	if v := os.Getenv("OPENFLUX_YANDEX_SPEED_DURATION"); v != "" {
 		var err error
@@ -127,10 +135,10 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 			tr := yandex.NewYandexDocsTransport(url, config)
 			raw = append(raw, tr)
 			backendTransports = append(backendTransports, tr)
-			peers = append(peers, transport.NewCompressedTransport(tr))
+			peers = append(peers, transport.NewUncompressedTransport(tr))
 			t.Cleanup(func() { tr.Stop() })
 		}
-		bridge, err := tcpbridge.NewPool(peers, tcpbridge.Config{Target: target, Timeout: 30 * time.Second})
+		bridge, err := tcpbridge.NewPool(peers, tcpbridge.Config{Target: target, Timeout: 30 * time.Second, WindowSize: windowSize})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -181,7 +189,7 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 			t.Fatal("a document disconnected during setup")
 		}
 	}
-	t.Logf("Ready: %d TCP streams, %d clients, 1 server, %d documents, %d backend sessions; %s send window per direction", len(conns), clients, len(urls), len(backendTransports), duration)
+	t.Logf("Ready: %d TCP streams, %d clients, 1 server, %d documents, %d backend sessions; window=%d KiB per stream, compression=none; %s send window per direction", len(conns), clients, len(urls), len(backendTransports), windowSize, duration)
 	var phases []speedPhaseResult
 	for _, direction := range []string{"upload", "download"} {
 		phase := speedPhaseResult{Direction: direction, Streams: make([]speedStreamResult, len(conns))}
@@ -254,11 +262,12 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 		Clients           int                        `json:"clients"`
 		Documents         int                        `json:"documents"`
 		Compression       string                     `json:"compression"`
+		WindowFrames      int                        `json:"window_frames"`
 		SocketWriteBuffer int                        `json:"socket_write_buffer"`
 		SendSeconds       float64                    `json:"send_seconds"`
 		Phases            []speedPhaseResult         `json:"phases"`
 		BackendStats      []transport.TransportStats `json:"backend_stats"`
-	}{UTC: time.Now().UTC().Format(time.RFC3339), Connections: len(conns), Clients: clients, Documents: len(urls), Compression: "lz4", SocketWriteBuffer: speedSocketWriteBuffer, SendSeconds: duration.Seconds(), Phases: phases}
+	}{UTC: time.Now().UTC().Format(time.RFC3339), Connections: len(conns), Clients: clients, Documents: len(urls), Compression: "none", WindowFrames: windowSize, SocketWriteBuffer: speedSocketWriteBuffer, SendSeconds: duration.Seconds(), Phases: phases}
 	for _, tr := range backendTransports {
 		report.BackendStats = append(report.BackendStats, tr.Stats())
 	}

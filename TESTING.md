@@ -51,8 +51,14 @@ OPENFLUX_YANDEX_TEST_URL="YOUR_YANDEX_DOC_URL" \
 from 1 to 64. `OPENFLUX_YANDEX_SPEED_CLIENTS` defaults to **1**; set it to 2
 to reproduce the earlier two-client topology. Streams are divided equally
 between clients, so the connection count must be divisible by the client count.
-There is always one bridge server. The benchmark uses
-the same LZ4 transport wrapper as the CLI. The test's sending TCP sockets request
+There is always one bridge server. Like the CLI, the current benchmark skips
+LZ4 compression on send and retains the uncompressed wire marker. Its default
+window is 64 frames (64 KiB) per stream/direction. Set
+`OPENFLUX_YANDEX_SPEED_WINDOW=16` to compare with the previous window, or choose
+any integer from 1 to 256. The setting applies to both clients and the server.
+Reports include `compression: "none"` and `window_frames` so that new results
+can be distinguished from earlier LZ4/16-frame runs.
+The test's sending TCP sockets request
 a 64 KiB write buffer to reduce queued data after the sending interval; production
 bridge socket settings are unchanged. Run throughput tests without `-race`.
 
@@ -64,6 +70,7 @@ OPENFLUX_YANDEX_TEST_URLS='["DOCUMENT_A_URL","DOCUMENT_B_URL"]' \
   OPENFLUX_YANDEX_SPEED_TEST=1 \
   OPENFLUX_YANDEX_SPEED_CLIENTS=1 \
   OPENFLUX_YANDEX_SPEED_CONNECTIONS=12 \
+  OPENFLUX_YANDEX_SPEED_WINDOW=64 \
   OPENFLUX_YANDEX_SPEED_REPORT=/tmp/openflux-speed-two-docs.json \
   go test -v -count=1 ./transport/yandex -run '^TestLiveYandexTCPSpeed$' -timeout 420s
 ```
@@ -91,7 +98,7 @@ Measured on 2026-09-10 with two distinct shared documents, one server and two
 clients. Every bridge subscribed to both documents, creating six WebSocket
 sessions. Each client opened six TCP streams through the pool, alternating
 between documents: three per document per client, six per document in total.
-Settings matched the LZ4 benchmark above (20s send interval, 64 KiB requested
+This historical run used LZ4 (20s send interval, 64 KiB requested
 test socket write buffers, 1024-byte frames, 16-frame window per stream).
 
 | Direction | Verified payload | Elapsed including drain | Aggregate throughput |
@@ -154,8 +161,9 @@ document URL or credentials:
 ## Historical 12-connection measurement (before LZ4)
 
 This earlier run used the bare Yandex transport and default TCP send buffers.
-It is not a controlled comparison with the current benchmark, which enables
-the CLI's LZ4 wrapper and requests smaller test socket write buffers.
+It is not a controlled comparison with the current benchmark, which retains
+the wire marker, requests smaller test socket write buffers and defaults to a
+64-frame window instead of 16.
 
 Measured on 2026-09-10 Moscow time (2026-09-09 22:44:46 UTC), through a real
 shared `.docx` document with one server and two clients, six streams per client.
