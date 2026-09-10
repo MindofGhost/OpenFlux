@@ -21,6 +21,9 @@ type Config struct {
 	Target         string
 	Timeout        time.Duration
 	MaxConnections int
+	// WindowSize bounds unacknowledged frames and receive reordering. Use the
+	// same value at both ends. Zero selects DefaultWindowSize.
+	WindowSize int
 }
 
 type Bridge struct {
@@ -63,6 +66,12 @@ func NewPool(transports []transport.Transport, config Config) (*Bridge, error) {
 	}
 	if config.MaxConnections == 0 {
 		config.MaxConnections = 1024
+	}
+	if config.WindowSize == 0 {
+		config.WindowSize = DefaultWindowSize
+	}
+	if config.WindowSize < 1 || config.WindowSize > MaxWindowSize {
+		return nil, fmt.Errorf("TCP window must be between 1 and %d frames", MaxWindowSize)
 	}
 	if config.Timeout < time.Second || config.MaxConnections < 1 {
 		return nil, errors.New("timeout must be at least 1s and max connections must be positive")
@@ -139,7 +148,7 @@ func (b *Bridge) add(id connectionID, conn net.Conn, lane int) bool {
 	}
 	ctx, cancel := context.WithCancel(b.ctx)
 	s := &stream{bridge: b, id: id, ctx: ctx, cancel: cancel, conn: conn,
-		in: make(chan frame, 4*windowSize), lane: lane, generation: transportGeneration(b.transports[lane])}
+		in: make(chan frame, 4*b.config.WindowSize), lane: lane, generation: transportGeneration(b.transports[lane])}
 	b.conns[id] = s
 	b.wg.Add(1)
 	go func() {
@@ -348,7 +357,7 @@ func (s *stream) run() {
 			return
 		}
 		var readCh <-chan readResult
-		if !localFIN && sent-acked < windowSize {
+		if !localFIN && sent-acked < uint64(s.bridge.config.WindowSize) {
 			readCh = reads
 		}
 		select {
@@ -410,7 +419,7 @@ func (s *stream) run() {
 					}
 					continue
 				}
-				if remoteFIN || f.seq-received > windowSize {
+				if remoteFIN || f.seq-received > uint64(s.bridge.config.WindowSize) {
 					return
 				}
 				pending[f.seq] = f

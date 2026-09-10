@@ -14,13 +14,25 @@ const (
 
 type CompressedTransport struct {
 	Transport
+	disableCompression bool
 }
 
 func NewCompressedTransport(inner Transport) Transport {
 	return &CompressedTransport{Transport: inner}
 }
 
+// NewUncompressedTransport skips compression on send while retaining the wire
+// marker and decoder so that existing compression-framed peers remain readable.
+func NewUncompressedTransport(inner Transport) Transport {
+	return &CompressedTransport{Transport: inner, disableCompression: true}
+}
+
 func (c *CompressedTransport) Send(data []byte) error {
+	if c.disableCompression {
+		packet := make([]byte, len(data)+1) // 0x00 marks an uncompressed message.
+		copy(packet[1:], data)
+		return c.Transport.Send(packet)
+	}
 	compressed := compress(data)
 	return c.Transport.Send(compressed)
 }

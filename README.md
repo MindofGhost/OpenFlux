@@ -165,9 +165,13 @@ to document A do not receive cursor traffic from document B.
 - Opening, data, half-close, reset, acknowledgements and heartbeat messages are
   framed separately. A FIN closes only the receiving TCP socket's write side,
   allowing the application to finish sending its response.
-- Data is split into 1024-byte chunks. A stream can have at most 16 unacknowledged
-  chunks; acknowledgements follow writes to the receiving TCP socket. A bounded
+- Data is split into 1024-byte chunks. A stream defaults to at most 64 unacknowledged
+  chunks (64 KiB per direction); acknowledgements follow writes to the receiving TCP socket. A bounded
   reorder buffer restores order and discards duplicate sequence numbers.
+  `--tcp-window` accepts 1–256 chunks; set the same value on client and server.
+  Use `--tcp-window 16` for the previous 16 KiB window. Larger windows increase
+  buffering and the load on the shared transport queue, without guaranteeing
+  higher throughput.
 - Lost messages are **not retransmitted** in this first version. Missing
   acknowledgements or peer heartbeats close the affected stream after the
   timeout, rather than delivering bytes after a gap. Queue overflow and socket
@@ -184,8 +188,10 @@ to document A do not receive cursor traffic from document B.
 - Streams on the same document share its backend bandwidth and outer TCP connection. This
   mode does not provide UDP-like latency or independent loss recovery per stream.
 
-Both ends should run the updated build: the transport now wraps messages with
-LZ4 compression (or a marker for uncompressed messages).
+Yandex sends messages without attempting LZ4 compression. The one-byte
+uncompressed marker and receive-side LZ4 decoder remain for compatibility with
+compression-framed peers. Update both ends and use matching TCP windows when
+comparing performance. MAX continues using its existing LZ4 wrapper.
 
 The backend still targets the old Yandex editor described above. It waits for
 Engine.IO, Socket.IO and document authentication before reporting connected.
@@ -208,6 +214,7 @@ Engine.IO, Socket.IO and document authentication before reporting connected.
 | `--target` | | Required destination `host:port` for the TCP bridge server |
 | `--tcp-timeout` | `30s` | TCP bridge opening, write, peer and acknowledgement timeout |
 | `--tcp-max-connections` | `1024` | Maximum simultaneous streams per TCP bridge process |
+| `--tcp-window` | `64` | Unacknowledged 1024-byte frames per stream/direction (1–256); same value on both ends |
 
 ## Implementing custom transports
 

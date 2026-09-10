@@ -11,7 +11,9 @@ import (
 const (
 	headerSize = 30
 	chunkSize  = 1024
-	windowSize = 16
+	// Window sizes are counts of 1024-byte frames, per stream and direction.
+	DefaultWindowSize = 64
+	MaxWindowSize     = 256
 )
 
 const (
