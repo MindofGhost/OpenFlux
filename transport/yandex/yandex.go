@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -51,15 +52,22 @@ func (s *DocSession) safeWrite(messageType int, data []byte) error {
 
 type YandexDocsTransport struct {
 	*transport.BaseTransport
-	url         string
-	session     *DocSession
-	lifecycleMu sync.Mutex
-	cancel      context.CancelFunc
-	done        chan struct{}
+	url                 string
+	batchSize           int
+	cursorMessagesSent  atomic.Uint64
+	payloadMessagesSent atomic.Uint64
+	session             *DocSession
+	lifecycleMu         sync.Mutex
+	cancel              context.CancelFunc
+	done                chan struct{}
 }
 
 func NewYandexDocsTransport(url string, config transport.TransportConfig) *YandexDocsTransport {
-	return &YandexDocsTransport{BaseTransport: transport.NewBaseTransport(config), url: url}
+	return NewYandexDocsTransportWithBatch(url, config, 1)
+}
+
+func NewYandexDocsTransportWithBatch(url string, config transport.TransportConfig, batchSize int) *YandexDocsTransport {
+	return &YandexDocsTransport{BaseTransport: transport.NewBaseTransport(config), url: url, batchSize: batchSize}
 }
 
 func (t *YandexDocsTransport) Start() error {
@@ -69,6 +77,9 @@ func (t *YandexDocsTransport) Start() error {
 		return fmt.Errorf("transport already started")
 	}
 	config := t.GetConfig()
+	if t.batchSize < 1 || t.batchSize > MaxBatchSize {
+		return fmt.Errorf("Yandex batch size must be between 1 and %d", MaxBatchSize)
+	}
 	if config.MaxQueueSize < 1 || config.KeepAliveInterval <= 0 {
 		return fmt.Errorf("invalid queue size or keep-alive interval")
 	}
@@ -305,15 +316,29 @@ func eventMetadata(data []byte) docEvent {
 func (t *YandexDocsTransport) writerLoop(ctx context.Context, session *DocSession) {
 	ticker := time.NewTicker(t.GetConfig().KeepAliveInterval)
 	defer ticker.Stop()
+	var carry []byte
 	for {
 		var message string
-		select {
-		case <-ctx.Done():
-			return
-		case packet := <-session.WriteQueue:
+		var packet []byte
+		count := 0
+		if carry != nil {
+			packet, carry = carry, nil
+		} else {
+			select {
+			case <-ctx.Done():
+				return
+			case packet = <-session.WriteQueue:
+			case <-ticker.C:
+				message = `42["message",{"type":"cursor","cursor":"18;---KA---"}]`
+			}
+		}
+		if packet != nil {
+			var ok bool
+			packet, carry, count, ok = collectBatch(ctx, session.WriteQueue, packet, t.batchSize)
+			if !ok {
+				return
+			}
 			message = fmt.Sprintf(`42["message",{"type":"cursor","cursor":"18;%s"}]`, base64.StdEncoding.EncodeToString(packet))
-		case <-ticker.C:
-			message = `42["message",{"type":"cursor","cursor":"18;---KA---"}]`
 		}
 		if ctx.Err() != nil {
 			return
@@ -322,6 +347,10 @@ func (t *YandexDocsTransport) writerLoop(ctx context.Context, session *DocSessio
 			utils.Debugf("[YDOCS] Write failed: %v", err)
 			session.Conn.Close() // Unblock the reader and reconnect once.
 			return
+		}
+		if count > 0 {
+			t.cursorMessagesSent.Add(1)
+			t.payloadMessagesSent.Add(uint64(count))
 		}
 	}
 }
@@ -370,8 +399,15 @@ func (t *YandexDocsTransport) handleMessage(session *DocSession, data []byte) {
 		if err != nil || len(decoded) == 0 {
 			continue
 		}
-		t.RecordReceive(len(decoded))
-		t.CallReceive(decoded)
+		packets, err := unpackBatch(decoded)
+		if err != nil {
+			utils.Debugf("[YDOCS] Invalid batch: %v", err)
+			continue
+		}
+		for _, packet := range packets {
+			t.RecordReceive(len(packet))
+			t.CallReceive(packet)
+		}
 	}
 }
 

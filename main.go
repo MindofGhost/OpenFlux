@@ -40,6 +40,7 @@ func main() {
 	bridgeTimeout := flag.Duration("tcp-timeout", 30*time.Second, "TCP bridge open, write, peer and acknowledgement timeout")
 	maxConnections := flag.Int("tcp-max-connections", 1024, "Maximum simultaneous TCP bridge connections")
 	windowSize := flag.Int("tcp-window", tcpbridge.DefaultWindowSize, "TCP window in 1024-byte frames (1-256); use the same value at both ends")
+	batchSize := flag.Int("yandex-batch", yandex.DefaultBatchSize, "Maximum messages per Yandex TCP batch (1-64); 1 disables batching")
 	debug := flag.Bool("debug", false, "Enable verbose debug logging")
 	socksAddr := flag.String("socks5", ":1080", "SOCKS5 address")
 	transportType := flag.String("transport", "yandex", "Transport type (yandex, oneme)")
@@ -73,8 +74,12 @@ func main() {
 
 	switch *transportType {
 	case "yandex":
+		batchLimit := 1
+		if *mode == "tcp" {
+			batchLimit = *batchSize
+		}
 		for _, docURL := range docURLs {
-			transports = append(transports, transport.NewUncompressedTransport(yandex.NewYandexDocsTransport(docURL, config)))
+			transports = append(transports, transport.NewUncompressedTransport(yandex.NewYandexDocsTransportWithBatch(docURL, config, batchLimit)))
 		}
 	case "oneme":
 		uidint, _ := strconv.ParseInt(maxUid, 10, 64)

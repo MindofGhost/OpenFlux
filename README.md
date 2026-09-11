@@ -172,6 +172,13 @@ to document A do not receive cursor traffic from document B.
   The default is `--tcp-window 16`. Larger windows increase
   buffering and the load on the shared transport queue, without guaranteeing
   higher throughput.
+- In Yandex TCP mode, `--yandex-batch` defaults to 6 messages per cursor event.
+  A partial batch waits at most 1ms, and a batch is capped at 64 KiB before
+  Base64 encoding. This does not increase the per-stream TCP window. Packet
+  boundaries, stream IDs and sequence numbers are preserved. Set
+  `--yandex-batch 1` to disable batching. Update all peers before enabling it:
+  older binaries cannot decode the new batch envelope. Legacy SOCKS5/IP mode
+  continues to send single messages.
 - Lost messages are **not retransmitted** in this first version. Missing
   acknowledgements or peer heartbeats close the affected stream after the
   timeout, rather than delivering bytes after a gap. Queue overflow and socket
@@ -215,6 +222,7 @@ Engine.IO, Socket.IO and document authentication before reporting connected.
 | `--tcp-timeout` | `30s` | TCP bridge opening, write, peer and acknowledgement timeout |
 | `--tcp-max-connections` | `1024` | Maximum simultaneous streams per TCP bridge process |
 | `--tcp-window` | `16` | Unacknowledged 1024-byte frames per stream/direction (1–256); same value on both ends |
+| `--yandex-batch` | `6` | Messages per Yandex TCP cursor event (1–64), with a 1ms flush timer; 1 disables batching |
 
 ## Implementing custom transports
 
