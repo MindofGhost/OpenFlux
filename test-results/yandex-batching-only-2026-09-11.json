@@ -1,0 +1,422 @@
+{
+  "utc": "2026-09-10T23:31:00Z",
+  "connections": 24,
+  "clients": 1,
+  "documents": 2,
+  "compression": "none",
+  "window_frames": 16,
+  "batch_size": 8,
+  "ack_every": 1,
+  "batch_stats": [
+    {
+      "cursor_messages_sent": 21170,
+      "payload_messages_sent": 165168
+    },
+    {
+      "cursor_messages_sent": 19332,
+      "payload_messages_sent": 150687
+    },
+    {
+      "cursor_messages_sent": 21168,
+      "payload_messages_sent": 165168
+    },
+    {
+      "cursor_messages_sent": 19341,
+      "payload_messages_sent": 150681
+    }
+  ],
+  "socket_write_buffer": 65536,
+  "send_seconds": 40,
+  "phases": [
+    {
+      "direction": "upload",
+      "bytes": 158531584,
+      "seconds": 42.647010849,
+      "mbps": 29.738371969151466,
+      "streams": [
+        {
+          "stream": 1,
+          "bytes": 6946816,
+          "seconds": 41.810161365,
+          "mbps": 1.329211038312863,
+          "sha256": "14554ff92f741ece642952dc7df76362254839520dd7e4d32744e0e27eecb49e"
+        },
+        {
+          "stream": 2,
+          "bytes": 6553600,
+          "seconds": 42.645526901,
+          "mbps": 1.2294091270512733,
+          "sha256": "11854f148b0f7c3208d8797f474e93ee51ceb97032bb39c36168fb5b43cce3a9"
+        },
+        {
+          "stream": 3,
+          "bytes": 6881280,
+          "seconds": 41.556287319,
+          "mbps": 1.324715068442373,
+          "sha256": "7c5ef932bc49b38aa086d15b4c3e5fb436674705b9d2f021f433687a8c87054f"
+        },
+        {
+          "stream": 4,
+          "bytes": 6356992,
+          "seconds": 41.647944879,
+          "mbps": 1.2210911282117767,
+          "sha256": "69b37a03c84bef0b17a879f5095c16f6b43fd00cdcbd7dab552d9fa39701e219"
+        },
+        {
+          "stream": 5,
+          "bytes": 7012352,
+          "seconds": 42.190950078,
+          "mbps": 1.3296409750500524,
+          "sha256": "0d5f6e58aa1d3e9fb312ff609b28f250d697d1e49128551385be30f77a02fa85"
+        },
+        {
+          "stream": 6,
+          "bytes": 6356992,
+          "seconds": 41.692402968,
+          "mbps": 1.219789035403722,
+          "sha256": "31e46a732568a33605ce0b820cedc555c833472ec566e516561cf5da1951a80a"
+        },
+        {
+          "stream": 7,
+          "bytes": 6815744,
+          "seconds": 41.103657876,
+          "mbps": 1.326547436836203,
+          "sha256": "45d125926680c1ea63ad8f4767c5030512976e3f7f0cd2450163e395973c73a3"
+        },
+        {
+          "stream": 8,
+          "bytes": 6356992,
+          "seconds": 41.694826506,
+          "mbps": 1.2197181343992807,
+          "sha256": "d1f098b05257ef89794b3d6c2a3261dad2db97c1c1c82a85fab3a0455483334e"
+        },
+        {
+          "stream": 9,
+          "bytes": 6881280,
+          "seconds": 41.512979994,
+          "mbps": 1.3260970426106868,
+          "sha256": "edb5b80285dafbce1ac800b00adb72f6aff78f6fb6fd661579dc7e0116a83650"
+        },
+        {
+          "stream": 10,
+          "bytes": 6291456,
+          "seconds": 41.40219275,
+          "mbps": 1.2156759016103078,
+          "sha256": "c800ca2488e0fccf56bd8e4c517104602155d11ab3d0a31babcf52732becaf6e"
+        },
+        {
+          "stream": 11,
+          "bytes": 6815744,
+          "seconds": 41.106229645,
+          "mbps": 1.3264644427595254,
+          "sha256": "506c08e625b1f62a732927eb33ed80be2b4ccc4750a067ac28ae4000609a813a"
+        },
+        {
+          "stream": 12,
+          "bytes": 6356992,
+          "seconds": 41.55266799,
+          "mbps": 1.2238909908802704,
+          "sha256": "70a3c1362da6ea14c2ef1618ffbef663d2f3b70b65b8584f379a35c38628202b"
+        },
+        {
+          "stream": 13,
+          "bytes": 6881280,
+          "seconds": 41.397952832,
+          "mbps": 1.3297816977424781,
+          "sha256": "50a5bd4ff93447ddd7a115f763fbe9a79d820e5861a21728db5bc21e794e11e7"
+        },
+        {
+          "stream": 14,
+          "bytes": 6488064,
+          "seconds": 42.31514933,
+          "mbps": 1.2266177201743083,
+          "sha256": "2beb209f3e601eb762c7dcfc4c28fce2a177fc84936d39df6da990a976a6cbd4"
+        },
+        {
+          "stream": 15,
+          "bytes": 6750208,
+          "seconds": 41.01353825,
+          "mbps": 1.3166789870903175,
+          "sha256": "e4584c8385860f17d57b1ce1048a3f3354357c5f960a3f61f2ca534149854c4d"
+        },
+        {
+          "stream": 16,
+          "bytes": 6356992,
+          "seconds": 41.737509723,
+          "mbps": 1.2184707793425242,
+          "sha256": "18be0208c0c13cf1fefb076c7c0873ba8aa164fee7ced39ab821aa81795efe33"
+        },
+        {
+          "stream": 17,
+          "bytes": 6750208,
+          "seconds": 40.92401419,
+          "mbps": 1.319559311784121,
+          "sha256": "4acabc17aaff826f0f590bff530c8834d966b93b3b1370a760aefec2a405e588"
+        },
+        {
+          "stream": 18,
+          "bytes": 6356992,
+          "seconds": 41.55263495,
+          "mbps": 1.2238919640401769,
+          "sha256": "af488703afd7327dddbc0fbda17d87aca8153aa6e2a2e40adb990c68213d0b40"
+        },
+        {
+          "stream": 19,
+          "bytes": 6881280,
+          "seconds": 41.427923716,
+          "mbps": 1.328819671904988,
+          "sha256": "589ced4fdcbc60102cc8c240750acd6396a5cb80b599abf9f28607e659ef1c09"
+        },
+        {
+          "stream": 20,
+          "bytes": 6291456,
+          "seconds": 41.266439209,
+          "mbps": 1.2196750910609928,
+          "sha256": "e64203c90d5e5a08a713309ea38b7e4f00d8afd48130a8a03608bbca6e412b9a"
+        },
+        {
+          "stream": 21,
+          "bytes": 6815744,
+          "seconds": 41.015598362,
+          "mbps": 1.3293955026270452,
+          "sha256": "3f7076d2668e277c506c6c6fefc9c25976e76144168d48581bff3855ff79b19d"
+        },
+        {
+          "stream": 22,
+          "bytes": 6225920,
+          "seconds": 41.129838113,
+          "mbps": 1.210978751318189,
+          "sha256": "be35dc58aee0ab08718b078f0b333626430b8304b153f22f10df7369a722fbb3"
+        },
+        {
+          "stream": 23,
+          "bytes": 6815744,
+          "seconds": 41.245566254,
+          "mbps": 1.3219833536583354,
+          "sha256": "0c540f7f11f09880fab0fa43dc759862f10feff8dbc6567070994da3664e6bef"
+        },
+        {
+          "stream": 24,
+          "bytes": 6291456,
+          "seconds": 41.465332419,
+          "mbps": 1.2138247799730004,
+          "sha256": "d3a28fdd8b4807f8bf8e21cf360220dbe8df67c5b29bade4bb438b66dff298b0"
+        }
+      ]
+    },
+    {
+      "direction": "download",
+      "bytes": 163708928,
+      "seconds": 43.494459239,
+      "mbps": 30.111224439035265,
+      "streams": [
+        {
+          "stream": 1,
+          "bytes": 7143424,
+          "seconds": 41.571305479,
+          "mbps": 1.3746836030653007,
+          "sha256": "8c0811a119c0908ade72078459e8260ce9c5dd21b6d7ce0f6e79f9e47700334a"
+        },
+        {
+          "stream": 2,
+          "bytes": 6422528,
+          "seconds": 42.424460465,
+          "mbps": 1.2110990555174759,
+          "sha256": "beebb41d710a79790275f34f90115e0c3daa3112eb8690dd9e62b351e128ea95"
+        },
+        {
+          "stream": 3,
+          "bytes": 7405568,
+          "seconds": 42.870698153,
+          "mbps": 1.3819356005951628,
+          "sha256": "cb36c3183338a5acbbbfa3e693d3a1c903f3ea39c799edd5fdeb1e3e96836b02"
+        },
+        {
+          "stream": 4,
+          "bytes": 6291456,
+          "seconds": 41.676726789,
+          "mbps": 1.2076679690998273,
+          "sha256": "694948269fd40d30a24dd434c8761856e942b907849262c54aace5558056c24b"
+        },
+        {
+          "stream": 5,
+          "bytes": 7340032,
+          "seconds": 42.701406018,
+          "mbps": 1.375136359098985,
+          "sha256": "a2d86fa62eb8a5a3642dbed1d6f9d927e18d69715103e7be25aff7827c99bddc"
+        },
+        {
+          "stream": 6,
+          "bytes": 6422528,
+          "seconds": 42.417678344,
+          "mbps": 1.2112926969579831,
+          "sha256": "63bb793ab81c9492fdc68722042dd1c86c5de79695aacc49829dfe4dec0a628d"
+        },
+        {
+          "stream": 7,
+          "bytes": 7012352,
+          "seconds": 40.916957472,
+          "mbps": 1.371040748530463,
+          "sha256": "f3a62c5b1c3954af3ab4c5a0774af7f0a16e0f3add7600bffc7b6f46892eacbf"
+        },
+        {
+          "stream": 8,
+          "bytes": 6619136,
+          "seconds": 43.395602172,
+          "mbps": 1.2202408850122317,
+          "sha256": "ab97f4d219f4736c8872bb2a25e07a13a2e4aa065a050813cc6d63ebb2e086c4"
+        },
+        {
+          "stream": 9,
+          "bytes": 7077888,
+          "seconds": 41.30079952,
+          "mbps": 1.3709929264826979,
+          "sha256": "e654253defe6aedd7ad91b349948ae6518c5d8bbf8aa9d54d4790f098fc2151e"
+        },
+        {
+          "stream": 10,
+          "bytes": 6553600,
+          "seconds": 42.923768577,
+          "mbps": 1.2214398161696622,
+          "sha256": "a2db7b889aab6d44bc8be4841c843c83210b18fab729b95ac7c50f75bd689e7c"
+        },
+        {
+          "stream": 11,
+          "bytes": 7143424,
+          "seconds": 41.735605528,
+          "mbps": 1.3692719028998006,
+          "sha256": "24162cb191af2c224e70e77d3805afca24099d80eb734f897b8aa01768a45637"
+        },
+        {
+          "stream": 12,
+          "bytes": 6488064,
+          "seconds": 42.659776799,
+          "mbps": 1.2167084756340476,
+          "sha256": "4c0ad43592379ed942bce892255b29639f0dffdf2e7f7b5d304e820f3ea674ae"
+        },
+        {
+          "stream": 13,
+          "bytes": 7208960,
+          "seconds": 41.960144794,
+          "mbps": 1.3744394897380487,
+          "sha256": "c56c27050c91fd4da5b79cf23967a136141311cf2e6bacdcb2701996366f138f"
+        },
+        {
+          "stream": 14,
+          "bytes": 6488064,
+          "seconds": 42.700381119,
+          "mbps": 1.2155514925112583,
+          "sha256": "8c7459dbaa02ef6941faad3ed3ec3e4abc4f89ea94da9a7f7a74860bfd125958"
+        },
+        {
+          "stream": 15,
+          "bytes": 7143424,
+          "seconds": 41.550358534,
+          "mbps": 1.3753766276947335,
+          "sha256": "b91f5557d51c84e889fc47c3f84237f2f15975f43dd2fe7e94fc7de6cb0ad8a3"
+        },
+        {
+          "stream": 16,
+          "bytes": 6422528,
+          "seconds": 42.385445984,
+          "mbps": 1.2122138344231512,
+          "sha256": "b81dacdd64aa9545273239ffd2fd5faf3718dc2febc9c1810e6271580c04a44d"
+        },
+        {
+          "stream": 17,
+          "bytes": 7340032,
+          "seconds": 42.533620832,
+          "mbps": 1.3805609504051923,
+          "sha256": "36509ba24d60338f464f0215cebcc4107846f40d778253751e0d3340ea88ec68"
+        },
+        {
+          "stream": 18,
+          "bytes": 6291456,
+          "seconds": 41.741410697,
+          "mbps": 1.2057965257896133,
+          "sha256": "dc569e90bd2d941467d0d2f92e8a0361ffdabd254e4310d430d32cfad2e6bc91"
+        },
+        {
+          "stream": 19,
+          "bytes": 7208960,
+          "seconds": 41.852839314,
+          "mbps": 1.3779633818226642,
+          "sha256": "87c8735831ed6b21014705ba100bca31e5cd934a0ace8ee17a87fc8636209a4f"
+        },
+        {
+          "stream": 20,
+          "bytes": 6291456,
+          "seconds": 41.791641239,
+          "mbps": 1.204347245234065,
+          "sha256": "3fa8060be3bcfa8fb0a64a3d80859d83e175dacb4b9d73eeec9a508a52302021"
+        },
+        {
+          "stream": 21,
+          "bytes": 7208960,
+          "seconds": 41.924814224,
+          "mbps": 1.3755977472402408,
+          "sha256": "72504d32ac91545e1607c4e037909febfb19a14b427fd5b02ca5a3ab50c2ea6a"
+        },
+        {
+          "stream": 22,
+          "bytes": 6553600,
+          "seconds": 43.009901105,
+          "mbps": 1.2189937352333282,
+          "sha256": "c6b6dbd026bc12f5b950d4c97049d303ddc28371487218adbf2dcda86d13e74c"
+        },
+        {
+          "stream": 23,
+          "bytes": 7012352,
+          "seconds": 41.012219329,
+          "mbps": 1.3678561394099484,
+          "sha256": "8e2d1c830057d0ec3ce4e35da4c0eaeadf551b9509e82ff92bb1dace5c8ce6cb"
+        },
+        {
+          "stream": 24,
+          "bytes": 6619136,
+          "seconds": 43.494034912,
+          "mbps": 1.217479318879892,
+          "sha256": "a70a96cf4420cb080a21568d8418e48144959c84db9ade1567ded4905039c83b"
+        }
+      ]
+    }
+  ],
+  "backend_stats": [
+    {
+      "BytesSent": 91371868,
+      "BytesReceived": 87372980,
+      "PacketsSent": 165168,
+      "PacketsRecv": 165168,
+      "Reconnects": 0,
+      "Connected": true,
+      "Uptime": 105487435133
+    },
+    {
+      "BytesSent": 82140597,
+      "BytesReceived": 80959464,
+      "PacketsSent": 150687,
+      "PacketsRecv": 150672,
+      "Reconnects": 1,
+      "Connected": true,
+      "Uptime": 104076498525
+    },
+    {
+      "BytesSent": 87372980,
+      "BytesReceived": 91371868,
+      "PacketsSent": 165168,
+      "PacketsRecv": 165168,
+      "Reconnects": 0,
+      "Connected": true,
+      "Uptime": 90696339685
+    },
+    {
+      "BytesSent": 80959929,
+      "BytesReceived": 82140597,
+      "PacketsSent": 150687,
+      "PacketsRecv": 150687,
+      "Reconnects": 0,
+      "Connected": true,
+      "Uptime": 89084471092
+    }
+  ]
+}

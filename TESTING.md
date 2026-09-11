@@ -58,6 +58,12 @@ window is 16 frames (16 KiB) per stream/direction. Use
 any integer from 1 to 256. The setting applies to both clients and the server.
 Reports include `compression: "none"` and `window_frames` so that new results
 can be distinguished from earlier LZ4/16-frame runs.
+`OPENFLUX_YANDEX_SPEED_BATCH` defaults to 6 messages (range 1–64), with a 1ms
+partial-batch flush. The value applies to every bridge in the test. Set it to
+`1` to disable batching. ACKs are sent after each incoming frame is processed;
+ACK aggregation and its CLI/environment options have been removed.
+Reports include `batch_size` and `batch_stats` counters distinguishing payload
+messages from actual cursor events sent (excluding keep-alives and authentication).
 The test's sending TCP sockets request
 a 64 KiB write buffer to reduce queued data after the sending interval; production
 bridge socket settings are unchanged. Run throughput tests without `-race`.
@@ -71,6 +77,7 @@ OPENFLUX_YANDEX_TEST_URLS='["DOCUMENT_A_URL","DOCUMENT_B_URL"]' \
   OPENFLUX_YANDEX_SPEED_CLIENTS=1 \
   OPENFLUX_YANDEX_SPEED_CONNECTIONS=12 \
   OPENFLUX_YANDEX_SPEED_WINDOW=16 \
+  OPENFLUX_YANDEX_SPEED_BATCH=6 \
   OPENFLUX_YANDEX_SPEED_REPORT=/tmp/openflux-speed-two-docs.json \
   go test -v -count=1 ./transport/yandex -run '^TestLiveYandexTCPSpeed$' -timeout 420s
 ```
@@ -84,6 +91,20 @@ sessions authenticate before that bridge starts opening streams. Backend
 counters in the report are ordered by server, then clients, and then by
 document within each group. The report records the document count, not URLs.
 
+For a controlled comparison, keep clients, documents, streams, duration and
+window identical and test these settings in separate runs:
+
+| Variant | `OPENFLUX_YANDEX_SPEED_BATCH` |
+|---|---:|
+| Without batching | 1 |
+| Current default | 6 |
+| Earlier batching experiment | 8 |
+
+Local regression tests cover batch ordering, malformed envelopes without
+partial delivery, byte limits, cancellation and partial-batch timers at the
+current default batch size. Existing tests also exercise ACK loss, half-close,
+window limits, document isolation and reconnects.
+
 The default send interval is 20 seconds per direction, configurable using
 `OPENFLUX_YANDEX_SPEED_DURATION` (1s–1m). Each stream is capped at 32 MiB per
 direction. Reported throughput counts application payload only, excludes
@@ -91,6 +112,38 @@ document login/TCP setup, and includes draining queued data and receiver SHA-256
 verification. Both bridge ends run locally, but all measured payload traverses
 the real Yandex document; this is not a measurement between two physical devices
 on different access networks. Tests are skipped unless explicitly enabled.
+
+## Historical batching and cumulative ACK comparison, 2026-09-11
+
+Three sequential runs used one client, one server, two documents (four sessions),
+24 TCP streams, a 16-frame window and no compression. Each direction had a 40s
+send interval; elapsed time includes draining and SHA-256 verification. All
+streams passed in both directions. Both bridge ends ran on the same machine
+through the actual Yandex backend. The current implementation retains only batching,
+with a default of 6. ACK aggregation was discarded; the following reports
+preserve the earlier experimental settings and results.
+
+| Variant | Batch | ACK every | Upload, Mbit/s | Download, Mbit/s |
+|---|---:|---:|---:|---:|
+| Previous behavior | 1 | 1 | 15.637 | 16.234 |
+| Batching only | 8 | 1 | 29.738 | 30.111 |
+| Batching + cumulative ACK | 8 | 8 | 28.173 | 23.353 |
+
+Batching alone improved throughput by approximately 90% upload and 85% download
+in these runs. The batching-only counters averaged 7.80 payload messages per
+cursor event. Cumulative ACKs did not provide an additional speed improvement
+in this comparison. These are single runs per setting in a changing network;
+they do not establish a stable limit or isolate why ACK aggregation was slower.
+The batching-only run retried one WebSocket connection during setup; no sessions
+reconnected during timed transfers in any run. All modes retain bounded queues
+and abort streams on overflow; backpressure on a full queue is not implemented
+by this experiment.
+
+Reports, including logical message and actual cursor-event counters:
+
+- [Previous behavior](test-results/yandex-batching-baseline-2026-09-11.json)
+- [Batching only](test-results/yandex-batching-only-2026-09-11.json)
+- [Batching and cumulative ACK](test-results/yandex-batching-ack-2026-09-11.json)
 
 ## Historical two-client run: 12 connections across two documents
 

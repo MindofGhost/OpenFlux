@@ -96,6 +96,14 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 			t.Fatalf("speed window must be between 1 and %d frames", tcpbridge.MaxWindowSize)
 		}
 	}
+	batchSize := yandex.DefaultBatchSize
+	if v := os.Getenv("OPENFLUX_YANDEX_SPEED_BATCH"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > yandex.MaxBatchSize {
+			t.Fatalf("OPENFLUX_YANDEX_SPEED_BATCH must be between 1 and %d", yandex.MaxBatchSize)
+		}
+		batchSize = n
+	}
 	duration := 20 * time.Second
 	if v := os.Getenv("OPENFLUX_YANDEX_SPEED_DURATION"); v != "" {
 		var err error
@@ -132,7 +140,7 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 		for _, url := range urls {
 			config := transport.DefaultConfig()
 			config.MaxReconnectAttempts = 2
-			tr := yandex.NewYandexDocsTransport(url, config)
+			tr := yandex.NewYandexDocsTransportWithBatch(url, config, batchSize)
 			raw = append(raw, tr)
 			backendTransports = append(backendTransports, tr)
 			peers = append(peers, transport.NewUncompressedTransport(tr))
@@ -189,7 +197,7 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 			t.Fatal("a document disconnected during setup")
 		}
 	}
-	t.Logf("Ready: %d TCP streams, %d clients, 1 server, %d documents, %d backend sessions; window=%d KiB per stream, compression=none; %s send window per direction", len(conns), clients, len(urls), len(backendTransports), windowSize, duration)
+	t.Logf("Ready: %d TCP streams, %d clients, 1 server, %d documents, %d backend sessions; window=%d KiB per stream, compression=none, batch=%d; %s send window per direction", len(conns), clients, len(urls), len(backendTransports), windowSize, batchSize, duration)
 	var phases []speedPhaseResult
 	for _, direction := range []string{"upload", "download"} {
 		phase := speedPhaseResult{Direction: direction, Streams: make([]speedStreamResult, len(conns))}
@@ -263,13 +271,16 @@ func TestLiveYandexTCPSpeed(t *testing.T) {
 		Documents         int                        `json:"documents"`
 		Compression       string                     `json:"compression"`
 		WindowFrames      int                        `json:"window_frames"`
+		BatchSize         int                        `json:"batch_size"`
+		BatchStats        []yandex.BatchStats        `json:"batch_stats"`
 		SocketWriteBuffer int                        `json:"socket_write_buffer"`
 		SendSeconds       float64                    `json:"send_seconds"`
 		Phases            []speedPhaseResult         `json:"phases"`
 		BackendStats      []transport.TransportStats `json:"backend_stats"`
-	}{UTC: time.Now().UTC().Format(time.RFC3339), Connections: len(conns), Clients: clients, Documents: len(urls), Compression: "none", WindowFrames: windowSize, SocketWriteBuffer: speedSocketWriteBuffer, SendSeconds: duration.Seconds(), Phases: phases}
+	}{UTC: time.Now().UTC().Format(time.RFC3339), Connections: len(conns), Clients: clients, Documents: len(urls), Compression: "none", WindowFrames: windowSize, BatchSize: batchSize, SocketWriteBuffer: speedSocketWriteBuffer, SendSeconds: duration.Seconds(), Phases: phases}
 	for _, tr := range backendTransports {
 		report.BackendStats = append(report.BackendStats, tr.Stats())
+		report.BatchStats = append(report.BatchStats, tr.BatchStats())
 	}
 	encoded, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
