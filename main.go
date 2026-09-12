@@ -13,6 +13,7 @@ import (
 	"time"
 
 	_ "github.com/wlynxg/anet"
+	"universal-bypass-tool/lease"
 	"universal-bypass-tool/socks5"
 	"universal-bypass-tool/tcpbridge"
 	"universal-bypass-tool/transport"
@@ -46,6 +47,16 @@ func main() {
 	transportType := flag.String("transport", "yandex", "Transport type (yandex, oneme)")
 	var docURLs documentURLs
 	flag.Var(&docURLs, "url", "Yandex document URL; repeat for a document pool in TCP mode")
+	leaseEnabled := flag.Bool("lease", false, "Enable document leases (Yandex TCP only)")
+	leaseConfig := lease.DefaultConfig()
+	var leaseURLs documentURLs
+	flag.Var(&leaseURLs, "lease-url", "Server document available for lease; repeat for the allocation pool")
+	flag.StringVar(&leaseConfig.StateFile, "lease-state", "", "Lease state file; required with --lease, use a separate file per process")
+	flag.StringVar(&leaseConfig.Selection, "lease-select", leaseConfig.Selection, "Client server selection: first or least-clients")
+	flag.DurationVar(&leaseConfig.TTL, "lease-ttl", leaseConfig.TTL, "Server lease duration, including offline reservation")
+	flag.DurationVar(&leaseConfig.Renew, "lease-renew", leaseConfig.Renew, "Client renewal interval (also limited to half remaining lease time)")
+	flag.DurationVar(&leaseConfig.Drain, "lease-drain", leaseConfig.Drain, "Time allowed for old TCP streams to finish after a document move")
+	flag.DurationVar(&leaseConfig.Discover, "lease-discovery", leaseConfig.Discover, "Collect offers this long after the first reply with least-clients")
 	flag.StringVar(&maxToken, "maxToken", "", "MAX call user id. If u use MAX transport")
 	flag.StringVar(&maxUid, "maxUid", "", "MAX Web token. If u use MAX transport")
 	flag.Parse()
@@ -63,6 +74,21 @@ func main() {
 
 	if *debug {
 		utils.EnableDebug()
+	}
+	if !*leaseEnabled && (len(leaseURLs) > 0 || leaseConfig.StateFile != "") {
+		log.Fatal("--lease-url and --lease-state require --lease")
+	}
+	if *leaseEnabled {
+		if *mode != "tcp" || *transportType != "yandex" {
+			log.Fatal("--lease requires --mode tcp --transport yandex")
+		}
+		leaseConfig.Bootstrap, leaseConfig.Pool = docURLs, leaseURLs
+		if err := runLeasedTCPBridge(leaseConfig, *listenAddr, *batchSize, tcpbridge.Config{
+			Target: *targetAddr, Timeout: *bridgeTimeout, MaxConnections: *maxConnections, WindowSize: *windowSize,
+		}); err != nil {
+			log.Fatal(err)
+		}
+		return
 	}
 
 	log.Printf("=== Universal Bypass Tool ===")

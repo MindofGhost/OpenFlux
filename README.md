@@ -203,6 +203,92 @@ comparing performance. MAX continues using its existing LZ4 wrapper.
 The backend still targets the old Yandex editor described above. It waits for
 Engine.IO, Socket.IO and document authentication before reporting connected.
 
+## Document leases and server selection
+
+`--lease` enables leases in Yandex TCP mode. Configure each server with its own
+bootstrap documents (`--url`) and a separate allocation pool (`--lease-url`).
+Create the documents beforehand. All documents must be distinct across servers
+and roles, including different links pointing to the same document.
+
+Server A:
+
+```bash
+./universal-bypass-tool --mode tcp --server --transport yandex --lease \
+  --target 127.0.0.1:443 \
+  --url 'https://disk.yandex.ru/i/ENTRY_A' \
+  --lease-url 'https://disk.yandex.ru/i/WORK_A1' \
+  --lease-url 'https://disk.yandex.ru/i/WORK_A2' \
+  --lease-state .openflux-state/server-a.json
+```
+
+Run server B with its own entry document, allocation documents, state file and
+target. Give the client both entry documents:
+
+```bash
+./universal-bypass-tool --mode tcp --client --transport yandex --lease \
+  --listen 127.0.0.1:15000 \
+  --url 'https://disk.yandex.ru/i/ENTRY_A' \
+  --url 'https://disk.yandex.ru/i/ENTRY_B' \
+  --lease-select least-clients \
+  --lease-state .openflux-state/client.json
+```
+
+Replace these example links with your documents. Lease mode accepts HTTPS
+`disk.yandex.ru` and `disk.yandex.com` links. TCP forwarding starts on available
+bootstrap documents while discovery runs. `first` chooses the first response;
+`least-clients` collects responses for another 3 seconds and chooses the lowest
+reported client count, preserving arrival order on ties. Offers do not reserve
+documents: only the selected server persists a grant.
+
+The client connects to the granted document and waits for the server's reply
+there before saving the lease and routing all new streams to it. Existing
+streams stay on old documents until completion or the 30-second drain deadline.
+Remaining streams are then aborted and the old document sessions are stopped.
+Existing TCP/TLS connections cannot move between documents; applications must
+reconnect after forced retirement. Renewal that changes the document uses the
+same procedure.
+
+Reservations last 30 minutes, including offline time. Only when all usable
+documents are reserved may a document be shared; the server chooses the one with
+the fewest distinct lease holders. A shared lease moves to a free document on
+renewal when possible. Old reservations survive until their expiry, extended
+when needed to cover draining and control retries. Clients renew every 5 minutes
+or after half the remaining lifetime, whichever is earlier.
+
+A client restart uses an unexpired saved document directly. Expired leases or
+no response on a saved document within 15 seconds cause bootstrap discovery.
+Control requests are retried; an exclusive assignment remains sticky across
+retries and server restarts. Data-frame retransmission behavior is unchanged.
+
+Client counts estimate unique clients heard from in the past 90 seconds;
+clients send a heartbeat every 30 seconds. This includes bootstrap clients and
+is independent of TCP stream counts. Presence is rebuilt after a server restart;
+offline reservations persist independently of presence.
+
+Each client state file contains an automatically generated persistent ID; no
+manual `client-id` is needed. Use a different file per device and do not copy
+client state between devices. State is atomically replaced and exclusively
+locked, and corrupt state causes a startup error instead of silently forgetting
+leases. Preserve the server file across restarts. Leases distribute load; they
+do not provide document privacy or replace target-service authentication.
+
+The server opens one session for every bootstrap and allocation document,
+including unused allocation documents. After migration a client normally has
+one session, with extra sessions during discovery and draining. Without
+`--lease`, the static document pool works as before. Batching remains 6 messages
+and the default TCP window remains 16 KiB per stream.
+
+| Lease flag | Default | Description |
+|---|---|---|
+| `--lease` | `false` | Enable leases on client and server |
+| `--lease-url` | | Server allocation document; repeat to provide a pool |
+| `--lease-state` | | Required state file path, separate per process |
+| `--lease-select` | `first` | Client policy: `first` or `least-clients` |
+| `--lease-ttl` | `30m` | Server reservation lifetime |
+| `--lease-renew` | `5m` | Client renewal interval |
+| `--lease-drain` | `30s` | Client stream drain deadline; also used for retaining old server reservations |
+| `--lease-discovery` | `3s` | Offer collection time for `least-clients`; must be less than 15s |
+
 ## Flags
 
 | Flag | Default | Description |
