@@ -113,6 +113,29 @@ verification. Both bridge ends run locally, but all measured payload traverses
 the real Yandex document; this is not a measurement between two physical devices
 on different access networks. Tests are skipped unless explicitly enabled.
 
+## Document lease regression tests
+
+Run the local lease and TCP migration checks without document URLs:
+
+```bash
+go test -race ./lease ./tcpbridge
+```
+
+Lease tests use an in-memory broadcast transport and real local TCP sockets.
+They check data forwarding before discovery, first-response and least-client
+selection, reservation only at the selected server, lost-grant retries, readiness
+before switching, draining and forced retirement of old streams, shared-document
+renewal onto a free document, client/server state restoration, expired and
+unavailable cached documents, exclusive file locks, corrupt files and persistence
+failure before a grant. Allocation tests also verify that disconnected clients'
+reservations survive and that old tokens work during a migration retry.
+
+The existing throughput test exercises the static pool; it does not measure
+lease discovery or migration. No new Yandex throughput measurement accompanies
+the lease change. Live lease validation requires a bootstrap document and at
+least one distinct allocation document per server; use the CLI examples in the
+README. Watch `[LEASE]` messages for the selected server and confirmed move.
+
 ## Historical batching and cumulative ACK comparison, 2026-09-11
 
 Three sequential runs used one client, one server, two documents (four sessions),

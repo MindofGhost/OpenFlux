@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -343,10 +344,18 @@ func TestTargetFailureAndUnknownMessages(t *testing.T) {
 	hub := &testHub{}
 	server := newBridge(t, hub.peer(), target)
 	p := hub.peer()
-	c := dialClient(t, listenClient(t, newBridge(t, p, "")))
-	_ = writeAll(c, []byte("hello"))
-	if _, err = c.Read(make([]byte, 1)); err == nil {
-		t.Fatal("unreachable target accepted data")
+	c, err := net.DialTimeout("tcp", listenClient(t, newBridge(t, p, "")), time.Second)
+	if err == nil {
+		defer c.Close()
+		c.SetDeadline(time.Now().Add(2 * time.Second))
+		_ = writeAll(c, []byte("hello"))
+		if _, err = c.Read(make([]byte, 1)); err == nil {
+			t.Fatal("unreachable target accepted data")
+		} else if e, ok := err.(net.Error); ok && e.Timeout() {
+			t.Fatal("unreachable target did not close the stream")
+		}
+	} else if !errors.Is(err, syscall.ECONNRESET) {
+		t.Fatal(err)
 	}
 	waitFor(t, func() bool { return count(server) == 0 })
 	var id connectionID
