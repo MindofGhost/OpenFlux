@@ -238,6 +238,34 @@ ACK отправляется после обработки каждого вхо
 | `--lease-drain` | `30s` | Время завершения старых TCP-потоков на клиенте; на сервере участвует в сохранении старой аренды |
 | `--lease-discovery` | `3s` | Сбор предложений для `least-clients`, меньше 15s |
 
+## Сервер в Docker Compose
+
+[Dockerfile](Dockerfile) собирает статический бинарник и образ с корневыми
+сертификатами HTTPS. [compose.yaml](compose.yaml) запускает TCP-сервер с арендой
+документов от UID 65532 и хранит состояние в постоянном volume `lease-state`.
+
+```bash
+cp .env.example .env
+# Укажите в .env свои OPENFLUX_BOOTSTRAP_URL, OPENFLUX_LEASE_URL и OPENFLUX_TARGET.
+docker compose up -d --build
+docker compose logs -f openflux-server
+```
+
+Этот пример рассчитан на Linux с `network_mode: host`: адрес
+`OPENFLUX_TARGET=127.0.0.1:443` означает AnyTLS/VLESS на хосте. Публиковать порты
+OpenFlux не требуется — сервер соединяется с Яндексом и целевым сервисом сам.
+Если целевой сервис находится в другом контейнере, подключите оба сервиса к
+общей Docker-сети, уберите `network_mode: host` и задайте, например,
+`OPENFLUX_TARGET=anytls:443`.
+
+Для нескольких выдаваемых документов добавьте в `command` новые пары
+`--lease-url` и ссылки. Каждый сервер должен иметь свои документы и volume;
+для отдельных экземпляров используйте разные имена проектов (`docker compose -p
+openflux-a up -d --build`, `openflux-b` и т. д.).
+Обычный `docker compose down` сохраняет аренды; `docker compose down -v`
+удаляет volume вместе с ними. Ссылки из `.env` и локальное состояние не включаются
+в контекст сборки. По умолчанию используются батчи 6 и окно 16 КиБ.
+
 ## Флаги
 
 | Флаг          | По умолчанию        | Описание                       |

@@ -289,6 +289,33 @@ and the default TCP window remains 16 KiB per stream.
 | `--lease-drain` | `30s` | Client stream drain deadline; also used for retaining old server reservations |
 | `--lease-discovery` | `3s` | Offer collection time for `least-clients`; must be less than 15s |
 
+## Server with Docker Compose
+
+[Dockerfile](Dockerfile) builds a static binary and a runtime image with HTTPS
+root certificates. [compose.yaml](compose.yaml) runs the lease-enabled TCP
+server as UID 65532 and persists its state in the `lease-state` volume.
+
+```bash
+cp .env.example .env
+# Set your OPENFLUX_BOOTSTRAP_URL, OPENFLUX_LEASE_URL and OPENFLUX_TARGET in .env.
+docker compose up -d --build
+docker compose logs -f openflux-server
+```
+
+The example uses Linux host networking, so `OPENFLUX_TARGET=127.0.0.1:443`
+reaches AnyTLS/VLESS on the host. No OpenFlux ports need publishing: the server
+initiates connections to Yandex and the target. To reach another container,
+remove `network_mode: host`, attach both services to the same Docker network,
+and use its service name, for example `OPENFLUX_TARGET=anytls:443`.
+
+Add more `--lease-url` / URL pairs to `command` to expand the allocation pool.
+Use distinct documents and a separate volume for each server. Separate Compose
+project names, such as `docker compose -p openflux-a up -d --build`, give each
+instance its own volume. `docker compose
+down` preserves leases; adding `-v` deletes their volume. `.env` and local lease
+state are excluded from the build context. Batch size 6 and a 16 KiB TCP window
+are configured in the example.
+
 ## Flags
 
 | Flag | Default | Description |

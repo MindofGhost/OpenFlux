@@ -1,0 +1,44 @@
+services:
+  openflux-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: openflux-server:local
+    restart: unless-stopped
+    # Linux: 127.0.0.1 in --target refers to the host's AnyTLS/VLESS service.
+    network_mode: host
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 45s
+    command:
+      - --mode
+      - tcp
+      - --server
+      - --transport
+      - yandex
+      - --lease
+      - --target
+      - ${OPENFLUX_TARGET:-127.0.0.1:443}
+      - --url
+      - ${OPENFLUX_BOOTSTRAP_URL:?Set OPENFLUX_BOOTSTRAP_URL in .env}
+      - --lease-url
+      - ${OPENFLUX_LEASE_URL:?Set OPENFLUX_LEASE_URL in .env}
+      # Extend the allocation pool by adding more --lease-url / URL pairs.
+      - --lease-state
+      - /state/server.json
+      - --lease-ttl
+      - ${OPENFLUX_LEASE_TTL:-30m}
+      - --lease-drain
+      - ${OPENFLUX_LEASE_DRAIN:-30s}
+      - --yandex-batch
+      - "6"
+      - --tcp-window
+      - "16"
+    volumes:
+      - lease-state:/state
+
+volumes:
+  lease-state:
