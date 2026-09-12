@@ -27,7 +27,10 @@ type Config struct {
 }
 
 type Bridge struct {
-	transports    []transport.Transport
+	transports    map[int]transport.Transport
+	lanes         []int
+	eligible      map[int]bool
+	nextLane      int
 	nextTransport int
 	config        Config
 	ctx           context.Context
@@ -77,10 +80,10 @@ func NewPool(transports []transport.Transport, config Config) (*Bridge, error) {
 		return nil, errors.New("timeout must be at least 1s and max connections must be positive")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	b := &Bridge{transports: append([]transport.Transport(nil), transports...), config: config, ctx: ctx, cancel: cancel,
+	b := &Bridge{transports: make(map[int]transport.Transport), eligible: make(map[int]bool), config: config, ctx: ctx, cancel: cancel,
 		conns: make(map[connectionID]*stream), closed: make(map[connectionID]time.Time)}
-	for i, tr := range b.transports {
-		tr.Receive(func(data []byte) { b.receive(i, data) })
+	for _, tr := range transports {
+		b.AddTransport(tr, true)
 	}
 	b.wg.Add(1)
 	go b.monitor()
@@ -117,21 +120,21 @@ func (b *Bridge) Serve(listener net.Listener) error {
 			conn.Close()
 			return fmt.Errorf("connection ID: %w", err)
 		}
-		lane := b.pickTransport()
-		if lane < 0 || !b.add(id, conn, lane) {
+		if !b.add(id, conn, -1) {
 			conn.Close()
 		}
 	}
 }
 
-func (b *Bridge) pickTransport() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	for offset := 0; offset < len(b.transports); offset++ {
-		i := (b.nextTransport + offset) % len(b.transports)
-		if b.transports[i].IsConnected() {
-			b.nextTransport = (i + 1) % len(b.transports)
-			return i
+// pickTransportLocked and add share a lock so a route switch cannot strand an
+// accepted socket between selecting its lane and registering the stream.
+func (b *Bridge) pickTransportLocked() int {
+	for offset := 0; offset < len(b.lanes); offset++ {
+		i := (b.nextTransport + offset) % len(b.lanes)
+		lane := b.lanes[i]
+		if b.eligible[lane] && b.transports[lane].IsConnected() {
+			b.nextTransport = (i + 1) % len(b.lanes)
+			return lane
 		}
 	}
 	return -1
@@ -140,7 +143,10 @@ func (b *Bridge) pickTransport() int {
 func (b *Bridge) add(id connectionID, conn net.Conn, lane int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.ctx.Err() != nil || len(b.conns) >= b.config.MaxConnections || b.conns[id] != nil {
+	if conn != nil && lane < 0 {
+		lane = b.pickTransportLocked()
+	}
+	if b.transports[lane] == nil || (conn != nil && !b.eligible[lane]) || b.ctx.Err() != nil || len(b.conns) >= b.config.MaxConnections || b.conns[id] != nil {
 		return false
 	}
 	if until, ok := b.closed[id]; ok && time.Now().Before(until) {
@@ -148,7 +154,7 @@ func (b *Bridge) add(id connectionID, conn net.Conn, lane int) bool {
 	}
 	ctx, cancel := context.WithCancel(b.ctx)
 	s := &stream{bridge: b, id: id, ctx: ctx, cancel: cancel, conn: conn,
-		in: make(chan frame, 4*b.config.WindowSize), lane: lane, generation: transportGeneration(b.transports[lane])}
+		in: make(chan frame, 4*b.config.WindowSize), lane: lane, trans: b.transports[lane], generation: transportGeneration(b.transports[lane])}
 	b.conns[id] = s
 	b.wg.Add(1)
 	go func() {
@@ -165,10 +171,14 @@ func (b *Bridge) receive(lane int, data []byte) {
 	}
 	b.mu.Lock()
 	s := b.conns[f.id]
+	tr := b.transports[lane]
 	b.mu.Unlock()
+	if tr == nil {
+		return
+	}
 	if s == nil {
 		// Unknown DATA/FIN/ACK never open sockets. Only clients initiate OPEN.
-		if b.isServer() && f.kind == openFrame && b.transports[lane].IsConnected() {
+		if b.isServer() && f.kind == openFrame && tr.IsConnected() {
 			b.add(f.id, nil, lane)
 		}
 		return
@@ -225,7 +235,7 @@ func (b *Bridge) monitor() {
 		case now := <-ticker.C:
 			b.mu.Lock()
 			for _, s := range b.conns {
-				if !b.transports[s.lane].IsConnected() || transportGeneration(b.transports[s.lane]) != s.generation {
+				if !s.trans.IsConnected() || transportGeneration(s.trans) != s.generation {
 					s.cancel()
 				}
 			}
@@ -243,10 +253,10 @@ func (b *Bridge) Close() error {
 	b.stop.Do(func() {
 		b.mu.Lock()
 		b.cancel()
-		b.mu.Unlock()
 		for _, tr := range b.transports {
 			tr.Receive(nil)
 		}
+		b.mu.Unlock()
 		b.wg.Wait()
 	})
 	return nil
@@ -255,6 +265,7 @@ func (b *Bridge) Close() error {
 type stream struct {
 	bridge     *Bridge
 	lane       int
+	trans      transport.Transport
 	id         connectionID
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -264,7 +275,7 @@ type stream struct {
 }
 
 func (s *stream) send(kind byte, seq uint64, data []byte) error {
-	trans := s.bridge.transports[s.lane]
+	trans := s.trans
 	if !trans.IsConnected() || s.generation != transportGeneration(trans) {
 		return errors.New("transport session lost")
 	}
